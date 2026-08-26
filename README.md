@@ -10,13 +10,15 @@ The action uses [DataDog/dd-octo-sts-action](https://github.com/DataDog/dd-octo-
 
 For every relevant pull request event, the action evaluates this rule:
 
-* is there any frozen team ? 
-    * No -> pass
-* is the required label present ?
-    * Yes -> pass
-* is a participant member of those teams ?
-    * No -> pass
-* fail
+```mermaid
+flowchart TD
+    A["Is any team frozen?"] -->|No| PASS1["Pass"]
+    A -->|Yes| B["Is the required label present?"]
+    B -->|Yes| PASS2["Pass"]
+    B -->|No| C["Is a participant member of a frozen team?"]
+    C -->|No| PASS3["Pass"]
+    C -->|Yes| FAIL["Fail"]
+```
 
 A participant is:
 
