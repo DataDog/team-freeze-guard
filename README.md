@@ -86,6 +86,8 @@ An empty `frozen_teams` values means that no check is performed (no code freeze)
 | Permission | Reason |
 | --- | --- |
 | `id-token: write` | Allows `dd-octo-sts-action` to exchange the workflow's OIDC identity for a short-lived GitHub App token. |
+| `contents: read` | Allows the default `GITHUB_TOKEN` to read repository and commit data needed to resolve commit authors and committers. |
+| `pull-requests: read` | Allows the default `GITHUB_TOKEN` to read the pull request and its commit list. |
 
 An action cannot grant these permissions to itself; they must be declared by the calling workflow.
 
@@ -140,7 +142,7 @@ Keep the job name stable. Changing it changes the status-check name and can leav
 | No participant belongs to a frozen team | Pass |
 | A participant belongs to a frozen team and the label is absent | Fail |
 | A participant belongs to a frozen team and the label is present | Pass |
-| The required label is removed | Re-evaluate and fail |
+| The required label is removed while a participant belongs to a frozen team | Re-evaluate and fail |
 | A new commit introduces a frozen participant | Re-evaluate and require the label |
 | The configuration is missing or malformed | Fail |
 | GitHub or Octo STS cannot be queried reliably | Fail |
@@ -156,10 +158,12 @@ Add the `ci-remediation` label before merging this pull request.
 
 ## Protecting the policy files
 
-Protect these paths with `CODEOWNERS` and required review from the CI-owning team:
+Protect this path with `CODEOWNERS` and required review from the CI-owning team:
 
 ```text
 /.github/workflows/team-freeze-guard.yml
 ```
 
-Otherwise, someone able to merge changes to either file could weaken or remove the enforcement policy.
+Otherwise, someone able to merge changes to this file could weaken or remove the enforcement policy.
+
+See [`docs/limitations.md`](docs/limitations.md) for known operational limitations, including reconciliation after configuration or team-membership changes, label authorization, and merge queue support.

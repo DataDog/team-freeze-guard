@@ -24,6 +24,9 @@ load and validate trusted repository configuration
 if frozen_teams is empty:
     pass
 
+if required_label is present:
+    pass
+
 collect PR author and GitHub-linked commit authors/committers
 resolve the active members of every frozen team
 find intersections between participants and frozen teams
@@ -31,11 +34,10 @@ find intersections between participants and frozen teams
 if there are no intersections:
     pass
 
-if required_label is present:
-    pass
-
 fail with "Your team is frozen"
 ```
+
+The label check runs before team-membership resolution so that a pull request carrying the required label never triggers the participant and team-membership API calls.
 
 The policy uses **any-match semantics**: one frozen participant is enough to require the label. This prevents a frozen engineer from bypassing the policy by opening a pull request through another author or contributing commits to an existing pull request.
 

@@ -55,6 +55,6 @@ Because `pull_request_target` runs with privileges associated with the base repo
 
 ### Configuration source
 
-The evaluator retrieves configuration through the workflow file definition. It does rely on a workspace checkout.
+The evaluator retrieves configuration (`required_label`, `frozen_teams`) through the `with` inputs of the `team-freeze-guard.yml` workflow definition. It does not rely on a workspace checkout.
 
-This does not prevents a pull request from modifying `.github/code-freeze.yml` and having the modified policy apply to itself. This is a tradeoff to keep the workflow simple. We'll consider later on to store this configuration in another place, with precise permissions.
+Because `pull_request_target` always evaluates the workflow definition from the base branch, a pull request cannot change its own `frozen_teams` or `required_label` by editing the workflow file on its own branch — the base-branch version is authoritative regardless of what the pull request contains.
