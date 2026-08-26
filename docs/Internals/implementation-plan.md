@@ -6,7 +6,7 @@ Working plan for building the `team-freeze-guard` action from the design docs. T
 
 ## Status
 
-- [ ] PR 1 — Project scaffolding
+- [x] PR 1 — Project scaffolding
 - [ ] PR 2 — Config parsing and validation
 - [ ] PR 3 — Decision engine (pure, no network)
 - [ ] PR 4 — Participant identity resolution (GitHub API adapter)

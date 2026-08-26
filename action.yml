@@ -9,7 +9,6 @@ inputs:
   frozen-teams:
     description: 'Newline-delimited list of frozen GitHub team slugs (e.g. @org/team-slug). An empty list disables the freeze.'
     required: true
-    default: ''
 
 runs:
   using: 'composite'
@@ -30,5 +29,5 @@ runs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
         ORG_TOKEN: ${{ steps.octo-sts.outputs.token }}
-        INPUT_BYPASS-LABELS: ${{ inputs.bypass-labels }}
-        INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
+        INPUT_BYPASS_LABELS: ${{ inputs.bypass-labels }}
+        INPUT_FROZEN_TEAMS: ${{ inputs.frozen-teams }}
