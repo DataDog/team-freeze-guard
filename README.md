@@ -29,6 +29,8 @@ A participant is:
 
 ## Workflow configuration
 
+The workflow uses `pull_request_target` rather than `pull_request` because it needs a trusted OIDC identity and correct permissions even for pull requests from forks, which `pull_request` cannot provide. Do not change the trigger to `pull_request`.
+
 Create `.github/workflows/team-freeze-guard.yml`:
 
 ```yaml
@@ -63,7 +65,11 @@ jobs:
             @DataDog/profiling
 ```
 
+Pin `team-freeze-guard` to a full commit SHA, and track new releases explicitly (for example with Dependabot's `github-actions` ecosystem) rather than floating a tag or branch, so upgrades are a reviewed, deliberate change.
+
 Team names must be GitHub team slugs, not display names. For example, configure `@DataDog/apm-sdk`, not `@DataDog/APM SDK` or `apm-sdk`.
+
+`frozen_teams` is a newline-delimited list, one `@org/team-slug` per line, as shown above. Blank lines are ignored. Every team must belong to the same GitHub organization as the repository; a team from another organization is rejected as a configuration error, since the Octo STS token is scoped to a single organization.
 
 Do not add a checkout step. The action reads the pull request and the trusted configuration through the `with` blocks; it must never execute code from the pull request branch.
 
@@ -97,26 +103,6 @@ Keep `team-freeze-guard` alone in its job. `id-token: write` applies to every st
 
 The organization scope, Octo STS policy name, and Octo STS pool are intentionally controlled by the action rather than exposed as repository inputs.
 
-## Octo STS trust policy
-
-The action internally requests an organization-scoped token from `dd-octo-sts-action`. The corresponding trust policy must:
-
-- Trust the calling repository and its protected workflow context.
-- Grant only the GitHub organization `Members: read` permission.
-- Be stored in the canonical organization trust-policy location.
-
-An illustrative policy is:
-
-```yaml
-issuer: https://token.actions.githubusercontent.com
-subject: repo:DataDog/<repository>:ref:refs/heads/<default-branch>
-
-permissions:
-  members: read
-```
-
-Adapt the subject and any additional claims to DataDog's canonical Octo STS policy conventions. The underlying Octo STS GitHub App installation must itself have `Members: read`; a trust policy cannot grant permissions that the App does not possess.
-
 ## Enforcing the result with a ruleset
 
 Running the action is not sufficient by itself. Configure a GitHub repository or organization ruleset that requires the following status check on the target branch:
@@ -147,7 +133,8 @@ Keep the job name stable. Changing it changes the status-check name and can leav
 | The required label is removed while a participant belongs to a frozen team | Re-evaluate and fail |
 | A new commit introduces a frozen participant | Re-evaluate and require the label |
 | The configuration is missing or malformed | Fail |
-| GitHub or Octo STS cannot be queried reliably | Fail |
+| A configured frozen team is unknown or inaccessible | Fail |
+| GitHub or Octo STS cannot be queried reliably (rate limiting, pagination, or unexpected responses) | Fail |
 
 Example failure summary:
 
