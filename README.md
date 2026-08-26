@@ -59,9 +59,9 @@ jobs:
     steps:
       - uses: DataDog/team-freeze-guard@<full-commit-sha>
         with: 
-          bypass_labels: |
+          bypass-labels: |
             ci-remediation
-          frozen_teams: |
+          frozen-teams: |
             @DataDog/apm-sdk
             @DataDog/profiling
 ```
@@ -70,27 +70,27 @@ Pin `team-freeze-guard` to a full commit SHA, and track new releases explicitly 
 
 Team names must be GitHub team slugs, not display names. For example, configure `@DataDog/apm-sdk`, not `@DataDog/APM SDK` or `apm-sdk`.
 
-`frozen_teams` is a newline-delimited list, one `@org/team-slug` per line, as shown above. Blank lines are ignored. Every team must belong to the same GitHub organization as the repository; a team from another organization is rejected as a configuration error, since the Octo STS token is scoped to a single organization.
+`frozen-teams` is a newline-delimited list, one `@org/team-slug` per line, as shown above. Blank lines are ignored. Every team must belong to the same GitHub organization as the repository; a team from another organization is rejected as a configuration error, since the Octo STS token is scoped to a single organization.
 
-`bypass_labels` is also a newline-delimited list, one label name per line. A pull request needs only one of the configured labels to satisfy the check; matching is case-insensitive.
+`bypass-labels` is also a newline-delimited list, one label name per line. A pull request needs only one of the configured labels to satisfy the check; matching is case-insensitive.
 
 Do not add a checkout step. The action reads the pull request and the trusted configuration through the `with` blocks; it must never execute code from the pull request branch.
 
-An empty `frozen_teams` values means that no check is performed (no code freeze):
+An empty `frozen-teams` values means that no check is performed (no code freeze):
 
 ```yml
         with: 
-          bypass_labels: |
+          bypass-labels: |
             ci-remediation
-          frozen_teams:
+          frozen-teams:
 ```
 
 ### Configuration fields
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
-| `bypass_labels` | Yes | None | Newline-delimited list of labels; any one present satisfies the check when a participant belongs to a frozen team. Matching is case-insensitive. |
-| `frozen_teams` | Yes | None | Newline-delimited list of frozen GitHub team slugs. An empty list disables all freezes. |
+| `bypass-labels` | Yes | None | Newline-delimited list of labels; any one present satisfies the check when a participant belongs to a frozen team. Matching is case-insensitive. |
+| `frozen-teams` | Yes | None | Newline-delimited list of frozen GitHub team slugs. An empty list disables all freezes. |
 
 
 ### Required workflow permissions

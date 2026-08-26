@@ -55,6 +55,6 @@ Because `pull_request_target` runs with privileges associated with the base repo
 
 ### Configuration source
 
-The evaluator retrieves configuration (`bypass_labels`, `frozen_teams`) through the `with` inputs of the `team-freeze-guard.yml` workflow definition. It does not rely on a workspace checkout.
+The evaluator retrieves configuration (`bypass-labels`, `frozen-teams`) through the `with` inputs of the `team-freeze-guard.yml` workflow definition. It does not rely on a workspace checkout.
 
-Because `pull_request_target` always evaluates the workflow definition from the base branch, a pull request cannot change its own `frozen_teams` or `bypass_labels` by editing the workflow file on its own branch — the base-branch version is authoritative regardless of what the pull request contains.
+Because `pull_request_target` always evaluates the workflow definition from the base branch, a pull request cannot change its own `frozen-teams` or `bypass-labels` by editing the workflow file on its own branch — the base-branch version is authoritative regardless of what the pull request contains.

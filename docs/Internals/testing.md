@@ -9,7 +9,7 @@ The evaluator should have unit tests covering:
 - Mapped and unmapped commit identities.
 - Label presence and removal.
 - Case-insensitive label matching.
-- Multiple configured `bypass_labels` (any-match).
+- Multiple configured `bypass-labels` (any-match).
 - Nested and paginated team results.
 - Missing, malformed, and unsupported configuration versions.
 - GitHub API, Octo STS, rate-limit, and pagination failures.

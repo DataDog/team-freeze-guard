@@ -21,10 +21,10 @@ The evaluator applies the following algorithm:
 ```text
 load and validate trusted repository configuration
 
-if frozen_teams is empty:
+if frozen-teams is empty:
     pass
 
-if any bypass_labels entry is present on the pull request:
+if any bypass-labels entry is present on the pull request:
     pass
 
 collect PR author and GitHub-linked commit authors/committers
@@ -39,7 +39,7 @@ fail with "Your team is frozen"
 
 The label check runs before team-membership resolution so that a pull request carrying a configured bypass label never triggers the participant and team-membership API calls.
 
-The policy uses **any-match semantics** on both sides: one frozen participant is enough to require a label, and any one of the configured `bypass_labels` is enough to satisfy it. The participant any-match prevents a frozen engineer from bypassing the policy by opening a pull request through another author or contributing commits to an existing pull request.
+The policy uses **any-match semantics** on both sides: one frozen participant is enough to require a label, and any one of the configured `bypass-labels` is enough to satisfy it. The participant any-match prevents a frozen engineer from bypassing the policy by opening a pull request through another author or contributing commits to an existing pull request.
 
 ## Check reporting
 
@@ -52,7 +52,7 @@ On a policy denial, the job summary includes:
 
 - The configured failure message.
 - The matching frozen teams.
-- The configured `bypass_labels`.
+- The configured `bypass-labels`.
 - A clear remediation instruction.
 
 The action should avoid exposing unnecessary organization membership information. Reporting matching teams is sufficient; listing every matching user is useful for debug logs but should not be included in the default user-facing summary.
@@ -91,7 +91,7 @@ Repository configuration and GitHub team membership changes do not generate thes
 
 The action implementation is centrally maintained, but each repository owns:
 
-- Its `bypass_labels`.
+- Its `bypass-labels`.
 - Its list of frozen teams.
 
 The CI-owning team should own reviews for the workflow files. Incident automation may update the frozen-team list, but those mutations should remain attributable and auditable through Git history.
