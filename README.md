@@ -2,7 +2,7 @@
 
 `team-freeze-guard` enforces per-team code freezes on GitHub pull requests.
 
-When a pull request author, commit author, or commit committer belongs to a configured frozen GitHub team, the pull request must carry a configured exception label. Otherwise, the action fails with `Your team is frozen`, and a required GitHub ruleset check prevents the pull request from being merged.
+When a pull request author, commit author, or commit committer belongs to a configured frozen GitHub team, the pull request must carry at least one of the configured bypass labels. Otherwise, the action fails with `Your team is frozen`, and a required GitHub ruleset check prevents the pull request from being merged.
 
 The action uses [DataDog/dd-octo-sts-action](https://github.com/DataDog/dd-octo-sts-action) internally to obtain a short-lived GitHub token with organization membership permissions. It does not require a personal access token or a GitHub App private key in the consuming repository.
 
@@ -13,7 +13,7 @@ For every relevant pull request event, the action evaluates this rule:
 ```mermaid
 flowchart TD
     A["Is any team frozen?"] -->|No| PASS1["Pass"]
-    A -->|Yes| B["Is the required label present?"]
+    A -->|Yes| B["Is a bypass label present?"]
     B -->|Yes| PASS2["Pass"]
     B -->|No| C["Is a participant member of a frozen team?"]
     C -->|No| PASS3["Pass"]
@@ -59,7 +59,8 @@ jobs:
     steps:
       - uses: DataDog/team-freeze-guard@<full-commit-sha>
         with: 
-          required_label: ci-remediation
+          bypass_labels: |
+            ci-remediation
           frozen_teams: |
             @DataDog/apm-sdk
             @DataDog/profiling
@@ -71,13 +72,16 @@ Team names must be GitHub team slugs, not display names. For example, configure 
 
 `frozen_teams` is a newline-delimited list, one `@org/team-slug` per line, as shown above. Blank lines are ignored. Every team must belong to the same GitHub organization as the repository; a team from another organization is rejected as a configuration error, since the Octo STS token is scoped to a single organization.
 
+`bypass_labels` is also a newline-delimited list, one label name per line. A pull request needs only one of the configured labels to satisfy the check; matching is case-insensitive.
+
 Do not add a checkout step. The action reads the pull request and the trusted configuration through the `with` blocks; it must never execute code from the pull request branch.
 
 An empty `frozen_teams` values means that no check is performed (no code freeze):
 
 ```yml
         with: 
-          required_label: ci-remediation
+          bypass_labels: |
+            ci-remediation
           frozen_teams:
 ```
 
@@ -85,8 +89,8 @@ An empty `frozen_teams` values means that no check is performed (no code freeze)
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
-| `required_label` | Yes | None | Label required when at least one participant belongs to a frozen team. Matching is case-insensitive. |
-| `frozen_teams` | Yes | None | List of frozen GitHub team slugs. An empty list disables all freezes. |
+| `bypass_labels` | Yes | None | Newline-delimited list of labels; any one present satisfies the check when a participant belongs to a frozen team. Matching is case-insensitive. |
+| `frozen_teams` | Yes | None | Newline-delimited list of frozen GitHub team slugs. An empty list disables all freezes. |
 
 
 ### Required workflow permissions
@@ -128,10 +132,10 @@ Keep the job name stable. Changing it changes the status-check name and can leav
 | --- | --- |
 | No frozen teams are configured | Pass |
 | No participant belongs to a frozen team | Pass |
-| A participant belongs to a frozen team and the label is absent | Fail |
-| A participant belongs to a frozen team and the label is present | Pass |
-| The required label is removed while a participant belongs to a frozen team | Re-evaluate and fail |
-| A new commit introduces a frozen participant | Re-evaluate and require the label |
+| A participant belongs to a frozen team and no bypass label is present | Fail |
+| A participant belongs to a frozen team and a bypass label is present | Pass |
+| The last remaining bypass label is removed while a participant belongs to a frozen team | Re-evaluate and fail |
+| A new commit introduces a frozen participant | Re-evaluate and require a bypass label |
 | The configuration is missing or malformed | Fail |
 | A configured frozen team is unknown or inaccessible | Fail |
 | GitHub or Octo STS cannot be queried reliably (rate limiting, pagination, or unexpected responses) | Fail |
@@ -142,7 +146,7 @@ Example failure summary:
 Your team is frozen.
 
 At least one pull request participant belongs to @DataDog/apm-sdk.
-Add the `ci-remediation` label before merging this pull request.
+Add one of the following labels before merging this pull request: `ci-remediation`.
 ```
 
 ## Protecting the policy files
