@@ -27,7 +27,7 @@ if frozen-teams is empty:
 if any bypass-labels entry is present on the pull request:
     pass
 
-collect PR author and GitHub-linked commit authors/committers
+collect PR author and the GitHub-linked committer of the current head commit
 resolve the active members of every frozen team
 find intersections between participants and frozen teams
 
@@ -39,7 +39,7 @@ fail with "Your team is frozen"
 
 The label check runs before team-membership resolution so that a pull request carrying a configured bypass label never triggers the participant and team-membership API calls: fewer API calls means a faster check and less exposure to transient GitHub/Octo STS infrastructure errors, which fail closed per the Failure policy below.
 
-The policy uses **any-match semantics** on both sides: one frozen participant is enough to require a label, and any one of the configured `bypass-labels` is enough to satisfy it. The participant any-match prevents a frozen engineer from bypassing the policy by opening a pull request through another author or contributing commits to an existing pull request.
+The policy uses **any-match semantics** on both sides: one frozen participant is enough to require a label, and any one of the configured `bypass-labels` is enough to satisfy it. The participant any-match prevents a frozen engineer from bypassing the policy by opening a pull request through another author or committing directly to an existing pull request. It does not prevent a frozen engineer from asking a teammate to both open the pull request and commit on their behalf — see the "Commit authorship is not checked" limitation in `docs/limitations.md`.
 
 ## Check reporting
 

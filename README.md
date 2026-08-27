@@ -2,7 +2,7 @@
 
 `team-freeze-guard` enforces per-team code freezes on GitHub pull requests.
 
-When a pull request author, commit author, or commit committer belongs to a configured frozen GitHub team, the pull request must carry at least one of the configured bypass labels. Otherwise, the action fails with `Your team is frozen`, and a required GitHub ruleset check prevents the pull request from being merged.
+When a pull request author or commit committer belongs to a configured frozen GitHub team, the pull request must carry at least one of the configured bypass labels. Otherwise, the action fails with `Your team is frozen`, and a required GitHub ruleset check prevents the pull request from being merged.
 
 The action uses [DataDog/dd-octo-sts-action](https://github.com/DataDog/dd-octo-sts-action) internally to obtain a short-lived GitHub token with organization membership permissions. It does not require a personal access token or a GitHub App private key in the consuming repository.
 
@@ -23,8 +23,9 @@ flowchart TD
 A participant is:
 
 - The pull request author.
-- The GitHub-linked author of any commit currently in the pull request.
-- The GitHub-linked committer of any commit currently in the pull request.
+- The GitHub-linked committer of the pull request's current head commit.
+
+Only the current head commit is checked, not the pull request's full commit history, and commit *authorship* is not checked, only the committer — see [`docs/limitations.md`](docs/limitations.md) for the tradeoffs this implies.
 
 
 ## Workflow configuration

@@ -8,7 +8,7 @@ Working plan for building the `team-freeze-guard` action from the design docs. T
 
 - [x] PR 1 — Project scaffolding
 - [x] PR 2 — Config parsing and validation
-- [ ] PR 3 — Decision engine (pure, no network)
+- [x] PR 3 — Decision engine (pure, no network)
 - [ ] PR 4 — Participant identity resolution (GitHub API adapter)
 - [ ] PR 5 — Team membership resolution (GitHub API adapter)
 - [ ] PR 6 — Action entrypoint: wiring, reporting, fail-closed policy
@@ -22,7 +22,7 @@ Before this plan, the repo contained only design docs — no code. The docs are 
 - `README.md` — public contract: config fields (`bypass-labels`, `frozen-teams`), workflow example, permissions, expected-behavior matrix, ruleset rollout.
 - `docs/Internals/README.md` — team-membership resolution strategy, the canonical decision algorithm, check reporting rules, fail-closed error list, event coverage table.
 - `docs/Internals/architecture.md` — composite-action structure, trusted-execution rules for `pull_request_target`, why config comes from workflow `with:` inputs (not a checked-out file).
-- `docs/Internals/participant-identity-resolution.md` — exact rule for building the participant set (PR author + GitHub-linked commit author/committer logins only, unmapped identities are warnings not participants).
+- `docs/Internals/participant-identity-resolution.md` — exact rule for building the participant set (PR author + GitHub-linked commit committer logins only, unmapped identities are warnings not participants).
 - `docs/Internals/octo-sts.md` — Octo STS trust policy shape (org-scoped `Members: read` token).
 - `docs/Internals/testing.md` — required unit vs. integration test coverage.
 - `docs/limitations.md` — known gaps to *not* try to silently solve mid-implementation (reconciliation on config/membership change, label authorization, `Co-authored-by` trailers, merge queues — all out of scope for this plan).
@@ -64,7 +64,7 @@ Source: `docs/Internals/README.md` "Decision algorithm" section (canonical order
   - Otherwise intersect `participants` against `teamMembership` (team → member-login set): no intersection → pass; intersection → fail, returning the matched team names (for the job summary — never the matched user list, per the "avoid exposing unnecessary org membership information" rule in `docs/Internals/README.md`).
 - `test/decision.test.ts`: cover every row of README's "Expected behavior" table, plus any-match across multiple frozen teams, any-match across multiple bypass labels, and case-sensitive label matching.
 
-**Status: implemented, under review.** Deviations from the plan:
+**Deviations from the plan:**
 - `src/decision.ts` and `test/decision.test.ts` were initially written without a local Node/npm environment; Node was later installed and `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` were all run and verified passing locally.
 - The PR 1 carried-forward housekeeping is now **done**: `npm install` was run to generate and commit `package-lock.json`, `ci.yml`'s install step switched from `npm install` to `npm ci`, and `cache: npm` re-enabled on the `setup-node` step.
 
@@ -72,12 +72,17 @@ Source: `docs/Internals/README.md` "Decision algorithm" section (canonical order
 
 Source: `docs/Internals/participant-identity-resolution.md`.
 
-- `src/github/participants.ts`: given an Octokit client + PR number, return the deduplicated set of GitHub logins:
+- `src/github/participants.ts`: given an Octokit client + the pull request's head SHA, return the deduplicated set of GitHub logins:
   - `pull_request.user.login`.
-  - Paginate `GET /repos/{owner}/{repo}/pulls/{pull_number}/commits` (use Octokit's `paginate` — pagination must be fully consumed), collect `commit.author.login` / `commit.committer.login` only where GitHub has linked an account.
-  - Track unmapped author/committer identities separately for warning logs — never fail or block on them, never treat them as participants.
+  - A single `GET /repos/{owner}/{repo}/commits/{sha}` call against `pull_request.head.sha` — not a paginated list of every commit — collecting `commit.committer.login` only where GitHub has linked an account. Commit *authorship* is intentionally not checked, and only the head commit is checked, not the full commit history — see `docs/limitations.md` for both tradeoffs.
+  - Track an unmapped committer identity separately for warning logs — never fail or block on it, never treat it as a participant.
   - Let unexpected/rate-limited responses throw — PR 6 catches and fails closed.
-- `test/github/participants.test.ts` (mocked Octokit transport or `nock`): author-only PR, multi-commit PR, mapped vs. unmapped identities, duplicate logins across commits, multi-page pagination.
+- `test/github/participants.test.ts` (mocked Octokit transport or `nock`): PR author alone, author + mapped head committer, deduplication when they're the same login, unmapped head committer identity, asserting only the head commit is fetched (not a commit list).
+
+**Status: implemented, not yet reviewed.** Deviations from the plan:
+- The plan originally called for paginating every commit on the pull request and collecting both author and committer logins across all of them. This was narrowed twice during review: first to committer-only (dropping commit-author resolution), then to the head commit only (dropping full commit-history pagination) — a single `GET .../commits/{sha}` call replaces `octokit.paginate(...pulls.listCommits...)` entirely. Both tradeoffs are documented in `docs/limitations.md`.
+- Uses a hand-written fake Octokit object (matching the shape `{ rest: { repos: { getCommit } } }`) rather than `nock`, since no HTTP transport needs mocking — `getCommit` is the only surface `resolveParticipants` touches.
+- Verified locally: `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` all pass.
 
 ## PR 5 — Team membership resolution (GitHub API adapter)
 
