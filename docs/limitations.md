@@ -21,7 +21,13 @@ If a bypass label represents an approval rather than a self-declared classificat
 
 ## `Co-authored-by` trailers are not evaluated
 
-Participant identity resolution uses the GitHub-linked commit author and committer only. A frozen engineer's contribution recorded solely as a `Co-authored-by:` trailer in a commit message is not detected, since GitHub does not surface trailer identities as a distinct author or committer on the commit. This is an accepted scope limitation, not a bypass GitHub itself can close: closing it would require parsing commit message trailers and mapping free-text identities to GitHub accounts, which is unreliable.
+Participant identity resolution uses the GitHub-linked commit committer only (see below). A frozen engineer's contribution recorded solely as a `Co-authored-by:` trailer in a commit message is not detected, since GitHub does not surface trailer identities as a distinct author or committer on the commit. This is an accepted scope limitation, not a bypass GitHub itself can close: closing it would require parsing commit message trailers and mapping free-text identities to GitHub accounts, which is unreliable.
+
+## Commit authorship is not checked
+
+Participant identity resolution only considers the pull request author and the GitHub-linked *committer* of each commit — not the commit *author*. This is a deliberate simplicity tradeoff: checking committer alone is simpler to implement and reason about than also resolving and deduplicating commit authors.
+
+The consequence: a frozen-team engineer can ask a teammate to open the pull request and commit on their behalf (e.g. via `git commit --author`), which the check cannot detect — the frozen engineer never appears as the PR author or as a committer on any commit. This is treated as an accepted gap, not a technical bypass to close: circumventing a freeze by asking a colleague to front a change on your behalf is a process/HR issue, not something this check is expected to prevent.
 
 ## Merge queues
 

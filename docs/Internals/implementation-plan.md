@@ -22,7 +22,7 @@ Before this plan, the repo contained only design docs — no code. The docs are 
 - `README.md` — public contract: config fields (`bypass-labels`, `frozen-teams`), workflow example, permissions, expected-behavior matrix, ruleset rollout.
 - `docs/Internals/README.md` — team-membership resolution strategy, the canonical decision algorithm, check reporting rules, fail-closed error list, event coverage table.
 - `docs/Internals/architecture.md` — composite-action structure, trusted-execution rules for `pull_request_target`, why config comes from workflow `with:` inputs (not a checked-out file).
-- `docs/Internals/participant-identity-resolution.md` — exact rule for building the participant set (PR author + GitHub-linked commit author/committer logins only, unmapped identities are warnings not participants).
+- `docs/Internals/participant-identity-resolution.md` — exact rule for building the participant set (PR author + GitHub-linked commit committer logins only, unmapped identities are warnings not participants).
 - `docs/Internals/octo-sts.md` — Octo STS trust policy shape (org-scoped `Members: read` token).
 - `docs/Internals/testing.md` — required unit vs. integration test coverage.
 - `docs/limitations.md` — known gaps to *not* try to silently solve mid-implementation (reconciliation on config/membership change, label authorization, `Co-authored-by` trailers, merge queues — all out of scope for this plan).
@@ -74,8 +74,8 @@ Source: `docs/Internals/participant-identity-resolution.md`.
 
 - `src/github/participants.ts`: given an Octokit client + PR number, return the deduplicated set of GitHub logins:
   - `pull_request.user.login`.
-  - Paginate `GET /repos/{owner}/{repo}/pulls/{pull_number}/commits` (use Octokit's `paginate` — pagination must be fully consumed), collect `commit.author.login` / `commit.committer.login` only where GitHub has linked an account.
-  - Track unmapped author/committer identities separately for warning logs — never fail or block on them, never treat them as participants.
+  - Paginate `GET /repos/{owner}/{repo}/pulls/{pull_number}/commits` (use Octokit's `paginate` — pagination must be fully consumed), collect `commit.committer.login` only where GitHub has linked an account. Commit *authorship* is intentionally not checked — see `docs/limitations.md`.
+  - Track unmapped committer identities separately for warning logs — never fail or block on them, never treat them as participants.
   - Let unexpected/rate-limited responses throw — PR 6 catches and fails closed.
 - `test/github/participants.test.ts` (mocked Octokit transport or `nock`): author-only PR, multi-commit PR, mapped vs. unmapped identities, duplicate logins across commits, multi-page pagination.
 

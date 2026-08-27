@@ -26,7 +26,6 @@ export async function resolveParticipants(input: ResolveParticipantsInput): Prom
   })
 
   for (const commit of commits) {
-    recordIdentity(commit.author?.login ?? null, commit.commit.author?.name ?? null, logins, unmappedIdentities)
     recordIdentity(commit.committer?.login ?? null, commit.commit.committer?.name ?? null, logins, unmappedIdentities)
   }
 
