@@ -56,15 +56,15 @@ describe('parseConfig', () => {
     })
   })
 
-  it('deduplicates bypass-labels case-insensitively, keeping the first casing', () => {
+  it('deduplicates bypass-labels by exact match only, keeping distinct casings', () => {
     const result = parseConfig({
-      bypassLabels: 'ci-remediation\nCI-Remediation',
+      bypassLabels: 'ci-remediation\nCI-Remediation\nci-remediation',
       frozenTeams: '',
       repoOwner,
     })
 
     expect(result).toEqual({
-      bypassLabels: ['ci-remediation'],
+      bypassLabels: ['ci-remediation', 'CI-Remediation'],
       frozenTeams: [],
     })
   })
@@ -135,16 +135,13 @@ describe('parseConfig', () => {
     expect((result as ConfigError).message).toContain(repoOwner)
   })
 
-  it('matches organization case-insensitively', () => {
+  it('rejects an organization that only differs from the repo owner by case', () => {
     const result = parseConfig({
       bypassLabels: '',
       frozenTeams: '@My-Org/apm-sdk',
       repoOwner,
     })
 
-    expect(result).toEqual({
-      bypassLabels: [],
-      frozenTeams: ['@My-Org/apm-sdk'],
-    })
+    expect(result).toBeInstanceOf(ConfigError)
   })
 })

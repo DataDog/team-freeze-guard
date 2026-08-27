@@ -45,9 +45,8 @@ function parseBypassLabels(raw: string): string[] {
   const seen = new Set<string>()
   const result: string[] = []
   for (const entry of splitLines(raw)) {
-    const key = entry.toLowerCase()
-    if (!seen.has(key)) {
-      seen.add(key)
+    if (!seen.has(entry)) {
+      seen.add(entry)
       result.push(entry)
     }
   }
@@ -66,7 +65,7 @@ function parseFrozenTeams(raw: string, repoOwner: string): string[] | ConfigErro
     }
 
     const [, org, slug] = match
-    if (org.toLowerCase() !== repoOwner.toLowerCase()) {
+    if (org !== repoOwner) {
       return new ConfigError(
         `frozen-teams entry "${entry}" belongs to organization "${org}", but this repository belongs to organization "${repoOwner}". Frozen teams must belong to the repository's own organization.`,
       )
