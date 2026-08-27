@@ -9,7 +9,7 @@ Working plan for building the `team-freeze-guard` action from the design docs. T
 - [x] PR 1 — Project scaffolding
 - [x] PR 2 — Config parsing and validation
 - [x] PR 3 — Decision engine (pure, no network)
-- [ ] PR 4 — Participant identity resolution (GitHub API adapter)
+- [x] PR 4 — Participant identity resolution (GitHub API adapter)
 - [ ] PR 5 — Team membership resolution (GitHub API adapter)
 - [ ] PR 6 — Action entrypoint: wiring, reporting, fail-closed policy
 - [ ] PR 7 — Bundling pipeline and policy-file protection
@@ -93,6 +93,11 @@ Source: `docs/Internals/README.md` "Team membership resolution" section.
   - An unknown/inaccessible team (404/403) is a distinct, typed `TeamResolutionError` — not swallowed, becomes a fail-closed error in PR 6.
   - Fully consume pagination; any pagination/rate-limit failure also becomes a `TeamResolutionError`.
 - `test/github/teams.test.ts`: single team, multiple teams, pagination, unknown team (404), inaccessible team (403), rate-limited response.
+
+**Status: implemented, not yet reviewed.** Deviations from the plan:
+- `TeamResolutionError` is thrown (not returned as a value like `ConfigError`), matching `participants.ts`'s "let unexpected responses throw, PR 6 catches" convention rather than `config.ts`'s returned-union convention.
+- Uses a hand-written fake Octokit exposing `rest.teams.listMembersInOrg` plus a minimal `paginate` implementation (stops when a page returns fewer than `per_page` items), rather than `nock`, matching the approach used for `participants.test.ts`.
+- Verified locally: `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` all pass.
 
 ## PR 6 — Action entrypoint: wiring, reporting, fail-closed policy
 
