@@ -43,10 +43,14 @@ export async function evaluate(input: EvaluateInput): Promise<void> {
   try {
     await evaluateOrThrow(input)
   } catch (error) {
-    input.reporter.warning(error instanceof Error ? error.message : String(error))
-    await safeWriteSummary(input.reporter, FAIL_CLOSED_SUMMARY)
-    input.reporter.setFailed(FROZEN_MESSAGE)
+    await reportFailClosed(input.reporter, error)
   }
+}
+
+async function reportFailClosed(reporter: Reporter, error: unknown): Promise<void> {
+  reporter.warning(error instanceof Error ? error.message : String(error))
+  await safeWriteSummary(reporter, FAIL_CLOSED_SUMMARY)
+  reporter.setFailed(FROZEN_MESSAGE)
 }
 
 async function safeWriteSummary(reporter: Reporter, markdown: string): Promise<void> {
@@ -145,7 +149,24 @@ function buildFailureSummary(decision: Decision, config: Config): string {
 }
 
 export function run(): void {
-  evaluate({
+  const reporter = buildReporter()
+  runWithReporter(reporter).catch(() => {
+    // reportFailClosed handles reporting internally and does not itself throw
+    // under normal operation; this is a last-resort backstop.
+    core.setFailed(FROZEN_MESSAGE)
+  })
+}
+
+async function runWithReporter(reporter: Reporter): Promise<void> {
+  try {
+    await evaluate(buildEvaluateInput(reporter))
+  } catch (error) {
+    await reportFailClosed(reporter, error)
+  }
+}
+
+function buildEvaluateInput(reporter: Reporter): EvaluateInput {
+  return {
     bypassLabelsInput: core.getInput('bypass-labels'),
     frozenTeamsInput: core.getInput('frozen-teams'),
     repoOwner: context.repo.owner,
@@ -153,17 +174,19 @@ export function run(): void {
     pullRequest: extractPullRequestContext(),
     octokit: getOctokit(getRequiredEnv('GITHUB_TOKEN')),
     orgOctokit: getOctokit(getRequiredEnv('ORG_TOKEN')),
-    reporter: {
-      info: core.info,
-      warning: core.warning,
-      setFailed: core.setFailed,
-      writeSummary: async (markdown) => {
-        await core.summary.addRaw(markdown, true).write()
-      },
+    reporter,
+  }
+}
+
+function buildReporter(): Reporter {
+  return {
+    info: core.info,
+    warning: core.warning,
+    setFailed: core.setFailed,
+    writeSummary: async (markdown) => {
+      await core.summary.addRaw(markdown, true).write()
     },
-  }).catch((error: unknown) => {
-    core.setFailed(error instanceof Error ? error.message : String(error))
-  })
+  }
 }
 
 function extractPullRequestContext(): PullRequestContext | undefined {
