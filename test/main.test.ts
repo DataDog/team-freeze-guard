@@ -1,0 +1,218 @@
+import { describe, expect, it, vi } from 'vitest'
+import { evaluate, type EvaluateInput, type PullRequestContext, type Reporter } from '../src/main'
+
+function fakeReporter(): Reporter & { summaries: string[]; failures: string[]; infos: string[]; warnings: string[] } {
+  const summaries: string[] = []
+  const failures: string[] = []
+  const infos: string[] = []
+  const warnings: string[] = []
+  return {
+    summaries,
+    failures,
+    infos,
+    warnings,
+    info: (message) => infos.push(message),
+    warning: (message) => warnings.push(message),
+    setFailed: (message) => failures.push(message),
+    writeSummary: async (markdown) => {
+      summaries.push(markdown)
+    },
+  }
+}
+
+function fakeOctokit(getCommitResult: unknown) {
+  return {
+    rest: {
+      repos: {
+        getCommit: async () => ({ data: getCommitResult }),
+      },
+    },
+  } as unknown as EvaluateInput['octokit']
+}
+
+function fakeOrgOctokit(membersByTeamSlug: Record<string, { login: string }[]>) {
+  const listMembersInOrg = async (params: { team_slug: string; page?: number }) => {
+    if ((params.page ?? 1) > 1) {
+      return { data: [] }
+    }
+    return { data: membersByTeamSlug[params.team_slug] ?? [] }
+  }
+  return {
+    rest: {
+      teams: { listMembersInOrg },
+    },
+    paginate: async (fn: typeof listMembersInOrg, params: { team_slug: string }) => {
+      const { data } = await fn({ ...params, page: 1 })
+      return data
+    },
+  } as unknown as EvaluateInput['orgOctokit']
+}
+
+function pullRequest(overrides: Partial<PullRequestContext> = {}): PullRequestContext {
+  return {
+    authorLogin: 'alice',
+    headSha: 'abc123',
+    labels: [],
+    ...overrides,
+  }
+}
+
+function baseInput(overrides: Partial<EvaluateInput> = {}): EvaluateInput {
+  return {
+    bypassLabelsInput: 'ci-remediation',
+    frozenTeamsInput: '@org/team-a',
+    repoOwner: 'org',
+    repoName: 'repo',
+    pullRequest: pullRequest(),
+    octokit: fakeOctokit({ committer: null, commit: { committer: null } }),
+    orgOctokit: fakeOrgOctokit({ 'team-a': [] }),
+    reporter: fakeReporter(),
+    ...overrides,
+  }
+}
+
+describe('evaluate', () => {
+  it('fails closed with the config error message when config is malformed', async () => {
+    const reporter = fakeReporter()
+    await evaluate(baseInput({ frozenTeamsInput: 'not-a-valid-handle', reporter }))
+
+    expect(reporter.failures).toEqual([
+      'frozen-teams entry "not-a-valid-handle" is not a valid GitHub team slug. Use the "@org/team-slug" format, e.g. "@my-org/my-team".',
+    ])
+  })
+
+  it('passes immediately without calling any API when frozen-teams is empty', async () => {
+    const reporter = fakeReporter()
+    const octokit = vi.fn()
+    const orgOctokit = vi.fn()
+    await evaluate(
+      baseInput({
+        frozenTeamsInput: '',
+        reporter,
+        octokit: octokit as unknown as EvaluateInput['octokit'],
+        orgOctokit: orgOctokit as unknown as EvaluateInput['orgOctokit'],
+      }),
+    )
+
+    expect(reporter.failures).toEqual([])
+    expect(reporter.infos).toEqual(['No frozen teams are configured; passing.'])
+  })
+
+  it('fails closed when there is no pull request context', async () => {
+    const reporter = fakeReporter()
+    await evaluate(baseInput({ pullRequest: undefined, reporter }))
+
+    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.summaries).toHaveLength(1)
+    expect(reporter.summaries[0]).toContain('could not be evaluated safely')
+  })
+
+  it('passes on the bypass-label short-circuit without resolving participants or teams', async () => {
+    const reporter = fakeReporter()
+    const orgOctokit = fakeOrgOctokit({ 'team-a': [{ login: 'alice' }] })
+    const paginateSpy = vi.spyOn(orgOctokit as unknown as { paginate: () => Promise<unknown> }, 'paginate')
+
+    await evaluate(
+      baseInput({
+        pullRequest: pullRequest({ labels: ['ci-remediation'] }),
+        orgOctokit,
+        reporter,
+      }),
+    )
+
+    expect(reporter.failures).toEqual([])
+    expect(reporter.infos).toEqual(['A configured bypass label is present; passing without evaluating participants.'])
+    expect(paginateSpy).not.toHaveBeenCalled()
+  })
+
+  it('passes when no participant belongs to a frozen team', async () => {
+    const reporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'carol' }] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.failures).toEqual([])
+    expect(reporter.infos).toEqual(['No participant belongs to a frozen team; passing.'])
+  })
+
+  it('fails with a job summary matching the documented format when a participant belongs to a frozen team', async () => {
+    const reporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.summaries).toEqual([
+      [
+        'Your team is frozen.',
+        '',
+        'At least one pull request participant belongs to @org/team-a.',
+        'Add one of the following labels before merging this pull request: `ci-remediation`.',
+      ].join('\n'),
+    ])
+  })
+
+  it('warns on unmapped commit identities without failing the run', async () => {
+    const reporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        octokit: fakeOctokit({
+          committer: null,
+          commit: { committer: { name: 'Unmapped Person', email: 'a@example.com' } },
+        }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.failures).toEqual([])
+    expect(reporter.warnings).toEqual([
+      'Could not map commit identity "Unmapped Person <a@example.com>" to a GitHub account; it was not checked against frozen teams.',
+    ])
+  })
+
+  it('fails closed when team membership resolution throws', async () => {
+    const reporter = fakeReporter()
+    const orgOctokit = {
+      rest: {
+        teams: {
+          listMembersInOrg: async () => {
+            throw { status: 404 }
+          },
+        },
+      },
+      paginate: async (fn: () => Promise<unknown>) => fn(),
+    } as unknown as EvaluateInput['orgOctokit']
+
+    await evaluate(baseInput({ orgOctokit, reporter }))
+
+    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.summaries[0]).toContain('could not be evaluated safely')
+  })
+
+  it('fails closed when participant resolution throws', async () => {
+    const reporter = fakeReporter()
+    const octokit = {
+      rest: {
+        repos: {
+          getCommit: async () => {
+            throw new Error('boom')
+          },
+        },
+      },
+    } as unknown as EvaluateInput['octokit']
+
+    await evaluate(baseInput({ octokit, reporter }))
+
+    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.summaries[0]).toContain('could not be evaluated safely')
+  })
+})

@@ -29,5 +29,8 @@ runs:
       env:
         GITHUB_TOKEN: ${{ github.token }}
         ORG_TOKEN: ${{ steps.octo-sts.outputs.token }}
-        INPUT_BYPASS_LABELS: ${{ inputs.bypass-labels }}
-        INPUT_FROZEN_TEAMS: ${{ inputs.frozen-teams }}
+        # @actions/core's getInput() only replaces spaces (not dashes) before
+        # uppercasing an input name to its INPUT_ env var, so these must keep
+        # the dash rather than using an underscore.
+        INPUT_BYPASS-LABELS: ${{ inputs.bypass-labels }}
+        INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
