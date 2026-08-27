@@ -8,7 +8,7 @@ The evaluator should have unit tests covering:
 - Duplicate identities and overlapping team membership.
 - Mapped and unmapped commit identities.
 - Label presence and removal.
-- Case-insensitive label matching.
+- Case-sensitive label matching.
 - Multiple configured `bypass-labels` (any-match).
 - Nested and paginated team results.
 - Missing, malformed, and unsupported configuration versions.

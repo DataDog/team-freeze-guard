@@ -60,9 +60,9 @@ Source: `docs/Internals/README.md` "Decision algorithm" section (canonical order
 - `src/decision.ts`, pure function:
   `decide({ frozenTeams, bypassLabels, prLabels, participants, teamMembership }) -> { outcome: 'pass' | 'fail', matchedTeams: string[] }`
   - `frozenTeams` empty → pass.
-  - Any `bypassLabels` entry present in `prLabels` (case-insensitive) → pass, **without needing `teamMembership` at all** — this mirrors "the label check runs before team-membership resolution" and lets PR 6 skip fetching team membership entirely when it short-circuits here.
+  - Any `bypassLabels` entry present in `prLabels` (case-sensitive, exact match) → pass, **without needing `teamMembership` at all** — this mirrors "the label check runs before team-membership resolution" and lets PR 6 skip fetching team membership entirely when it short-circuits here.
   - Otherwise intersect `participants` against `teamMembership` (team → member-login set): no intersection → pass; intersection → fail, returning the matched team names (for the job summary — never the matched user list, per the "avoid exposing unnecessary org membership information" rule in `docs/Internals/README.md`).
-- `test/decision.test.ts`: cover every row of README's "Expected behavior" table, plus any-match across multiple frozen teams, any-match across multiple bypass labels, and case-insensitive label matching.
+- `test/decision.test.ts`: cover every row of README's "Expected behavior" table, plus any-match across multiple frozen teams, any-match across multiple bypass labels, and case-sensitive label matching.
 
 ## PR 4 — Participant identity resolution (GitHub API adapter)
 
