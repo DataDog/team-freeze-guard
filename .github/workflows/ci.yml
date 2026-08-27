@@ -14,11 +14,9 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 20
-          # No package-lock.json exists yet (needs a real `npm install` once Node/npm
-          # is available), so `cache: npm` can't resolve a lockfile to key off of.
-          # Re-enable once the lockfile is committed.
+          cache: npm
 
-      - run: npm install
+      - run: npm ci
 
       - run: npm run lint
 

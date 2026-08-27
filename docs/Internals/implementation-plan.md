@@ -7,7 +7,7 @@ Working plan for building the `team-freeze-guard` action from the design docs. T
 ## Status
 
 - [x] PR 1 — Project scaffolding
-- [ ] PR 2 — Config parsing and validation
+- [x] PR 2 — Config parsing and validation
 - [ ] PR 3 — Decision engine (pure, no network)
 - [ ] PR 4 — Participant identity resolution (GitHub API adapter)
 - [ ] PR 5 — Team membership resolution (GitHub API adapter)
@@ -63,6 +63,10 @@ Source: `docs/Internals/README.md` "Decision algorithm" section (canonical order
   - Any `bypassLabels` entry present in `prLabels` (case-sensitive, exact match) → pass, **without needing `teamMembership` at all** — this mirrors "the label check runs before team-membership resolution" and lets PR 6 skip fetching team membership entirely when it short-circuits here.
   - Otherwise intersect `participants` against `teamMembership` (team → member-login set): no intersection → pass; intersection → fail, returning the matched team names (for the job summary — never the matched user list, per the "avoid exposing unnecessary org membership information" rule in `docs/Internals/README.md`).
 - `test/decision.test.ts`: cover every row of README's "Expected behavior" table, plus any-match across multiple frozen teams, any-match across multiple bypass labels, and case-sensitive label matching.
+
+**Status: implemented, under review.** Deviations from the plan:
+- `src/decision.ts` and `test/decision.test.ts` were initially written without a local Node/npm environment; Node was later installed and `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` were all run and verified passing locally.
+- The PR 1 carried-forward housekeeping is now **done**: `npm install` was run to generate and commit `package-lock.json`, `ci.yml`'s install step switched from `npm install` to `npm ci`, and `cache: npm` re-enabled on the `setup-node` step.
 
 ## PR 4 — Participant identity resolution (GitHub API adapter)
 
