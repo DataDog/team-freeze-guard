@@ -97,6 +97,7 @@ Source: `docs/Internals/README.md` "Team membership resolution" section.
 **Status: implemented, not yet reviewed.** Deviations from the plan:
 - `TeamResolutionError` is thrown (not returned as a value like `ConfigError`), matching `participants.ts`'s "let unexpected responses throw, PR 6 catches" convention rather than `config.ts`'s returned-union convention.
 - Uses a hand-written fake Octokit exposing `rest.teams.listMembersInOrg` plus a minimal `paginate` implementation (stops when a page returns fewer than `per_page` items), rather than `nock`, matching the approach used for `participants.test.ts`.
+- `resolveTeamMembership()` takes `teamHandles: string[]` in the config's `@org/team-slug` form (not a bare `team_slug`), since that's the form `frozenTeams` entries and `decide()`'s comparisons use elsewhere in the codebase. Internally it extracts the bare slug for the GitHub API request (`team_slug` must not include the `@org/` prefix), while the returned `Map`'s keys stay as the full handle, so callers never need to reconcile two different team-name representations. Also splits 404 ("unknown team") from 403 ("inaccessible team") error messages, since a permission failure is a different operational problem than a nonexistent team.
 - Verified locally: `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` all pass.
 
 ## PR 6 — Action entrypoint: wiring, reporting, fail-closed policy

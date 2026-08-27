@@ -12,7 +12,8 @@ export class TeamResolutionError extends Error {
 export interface ResolveTeamMembershipInput {
   octokit: Octokit
   org: string
-  teamSlugs: string[]
+  /** Frozen team handles in "@org/team-slug" form, as produced by config parsing. */
+  teamHandles: string[]
 }
 
 export async function resolveTeamMembership(
@@ -20,14 +21,28 @@ export async function resolveTeamMembership(
 ): Promise<Map<string, Set<string>>> {
   const membership = new Map<string, Set<string>>()
 
-  for (const teamSlug of input.teamSlugs) {
-    membership.set(teamSlug, await listTeamMembers(input.octokit, input.org, teamSlug))
+  for (const teamHandle of input.teamHandles) {
+    const teamSlug = extractTeamSlug(teamHandle)
+    membership.set(teamHandle, await listTeamMembers(input.octokit, input.org, teamHandle, teamSlug))
   }
 
   return membership
 }
 
-async function listTeamMembers(octokit: Octokit, org: string, teamSlug: string): Promise<Set<string>> {
+function extractTeamSlug(teamHandle: string): string {
+  const slug = teamHandle.split('/')[1]
+  if (!slug) {
+    throw new TeamResolutionError(`"${teamHandle}" is not a valid "@org/team-slug" handle.`)
+  }
+  return slug
+}
+
+async function listTeamMembers(
+  octokit: Octokit,
+  org: string,
+  teamHandle: string,
+  teamSlug: string,
+): Promise<Set<string>> {
   try {
     const members = await octokit.paginate(octokit.rest.teams.listMembersInOrg, {
       org,
@@ -37,13 +52,15 @@ async function listTeamMembers(octokit: Octokit, org: string, teamSlug: string):
     return new Set(members.map((member: { login: string }) => member.login))
   } catch (error) {
     const status = getHttpStatus(error)
-    if (status === 404 || status === 403) {
-      throw new TeamResolutionError(
-        `Team "@${org}/${teamSlug}" is unknown or inaccessible with the current token.`,
-        { cause: error },
-      )
+    if (status === 404) {
+      throw new TeamResolutionError(`Team "${teamHandle}" is unknown.`, { cause: error })
     }
-    throw new TeamResolutionError(`Failed to resolve members of team "@${org}/${teamSlug}".`, {
+    if (status === 403) {
+      throw new TeamResolutionError(`Team "${teamHandle}" is inaccessible with the current token.`, {
+        cause: error,
+      })
+    }
+    throw new TeamResolutionError(`Failed to resolve members of team "${teamHandle}".`, {
       cause: error,
     })
   }
