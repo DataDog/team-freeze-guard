@@ -16,24 +16,34 @@ export interface ResolveTeamMembershipInput {
   teamHandles: string[]
 }
 
+const TEAM_HANDLE_PATTERN = /^@([^/]+)\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/
+
 export async function resolveTeamMembership(
   input: ResolveTeamMembershipInput,
 ): Promise<Map<string, Set<string>>> {
   const membership = new Map<string, Set<string>>()
 
   for (const teamHandle of input.teamHandles) {
-    const teamSlug = extractTeamSlug(teamHandle)
+    const teamSlug = extractTeamSlug(teamHandle, input.org)
     membership.set(teamHandle, await listTeamMembers(input.octokit, input.org, teamHandle, teamSlug))
   }
 
   return membership
 }
 
-function extractTeamSlug(teamHandle: string): string {
-  const slug = teamHandle.split('/')[1]
-  if (!slug) {
+function extractTeamSlug(teamHandle: string, org: string): string {
+  const match = TEAM_HANDLE_PATTERN.exec(teamHandle)
+  if (!match) {
     throw new TeamResolutionError(`"${teamHandle}" is not a valid "@org/team-slug" handle.`)
   }
+
+  const [, handleOrg, slug] = match
+  if (handleOrg !== org) {
+    throw new TeamResolutionError(
+      `"${teamHandle}" belongs to organization "${handleOrg}", but team membership is being resolved for organization "${org}".`,
+    )
+  }
+
   return slug
 }
 

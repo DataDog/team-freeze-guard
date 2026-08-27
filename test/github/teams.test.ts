@@ -127,4 +127,28 @@ describe('resolveTeamMembership', () => {
       resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@org/team-a'] }),
     ).rejects.toThrow(TeamResolutionError)
   })
+
+  it('rejects a handle missing the leading "@"', async () => {
+    const octokit = fakeOctokit({ 'team-a': [[{ login: 'alice' }]] })
+
+    await expect(
+      resolveTeamMembership({ octokit, org: 'org', teamHandles: ['org/team-a'] }),
+    ).rejects.toThrow(TeamResolutionError)
+  })
+
+  it('rejects a handle with an extra path segment', async () => {
+    const octokit = fakeOctokit({ 'team-a': [[{ login: 'alice' }]] })
+
+    await expect(
+      resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@org/team-a/extra'] }),
+    ).rejects.toThrow(TeamResolutionError)
+  })
+
+  it('rejects a handle whose org does not match the resolved organization', async () => {
+    const octokit = fakeOctokit({ 'team-a': [[{ login: 'alice' }]] })
+
+    await expect(
+      resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@other-org/team-a'] }),
+    ).rejects.toThrow(TeamResolutionError)
+  })
 })
