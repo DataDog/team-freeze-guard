@@ -44,8 +44,18 @@ export async function evaluate(input: EvaluateInput): Promise<void> {
     await evaluateOrThrow(input)
   } catch (error) {
     input.reporter.warning(error instanceof Error ? error.message : String(error))
-    await input.reporter.writeSummary(FAIL_CLOSED_SUMMARY)
+    await safeWriteSummary(input.reporter, FAIL_CLOSED_SUMMARY)
     input.reporter.setFailed(FROZEN_MESSAGE)
+  }
+}
+
+async function safeWriteSummary(reporter: Reporter, markdown: string): Promise<void> {
+  try {
+    await reporter.writeSummary(markdown)
+  } catch (error) {
+    reporter.warning(
+      `Failed to write the job summary: ${error instanceof Error ? error.message : String(error)}`,
+    )
   }
 }
 
@@ -112,19 +122,26 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
 }
 
 async function reportFailure(decision: Decision, config: Config, reporter: Reporter): Promise<void> {
-  await reporter.writeSummary(buildFailureSummary(decision, config))
+  await safeWriteSummary(reporter, buildFailureSummary(decision, config))
   reporter.setFailed(FROZEN_MESSAGE)
 }
 
 function buildFailureSummary(decision: Decision, config: Config): string {
   const teams = decision.matchedTeams.join(', ')
-  const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ')
-  return [
+  const lines = [
     'Your team is frozen.',
     '',
     `At least one pull request participant belongs to ${teams}.`,
-    `Add one of the following labels before merging this pull request: ${labels}.`,
-  ].join('\n')
+  ]
+
+  if (config.bypassLabels.length > 0) {
+    const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ')
+    lines.push(`Add one of the following labels before merging this pull request: ${labels}.`)
+  } else {
+    lines.push('No bypass labels are configured for this repository; contact an administrator to proceed.')
+  }
+
+  return lines.join('\n')
 }
 
 export function run(): void {

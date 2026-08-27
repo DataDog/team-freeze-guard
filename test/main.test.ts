@@ -215,4 +215,67 @@ describe('evaluate', () => {
     expect(reporter.failures).toEqual(['Your team is frozen'])
     expect(reporter.summaries[0]).toContain('could not be evaluated safely')
   })
+
+  it('fails closed with a config error when frozen-teams is the action.yml "not set" sentinel', async () => {
+    const reporter = fakeReporter()
+    await evaluate(baseInput({ frozenTeamsInput: '__frozen-teams-not-set__', reporter }))
+
+    expect(reporter.failures).toEqual([
+      'frozen-teams entry "__frozen-teams-not-set__" is not a valid GitHub team slug. Use the "@org/team-slug" format, e.g. "@my-org/my-team".',
+    ])
+  })
+
+  it('still calls setFailed with the frozen message when writing the failure summary throws', async () => {
+    const reporter = fakeReporter()
+    reporter.writeSummary = async () => {
+      throw new Error('summary API unavailable')
+    }
+
+    await evaluate(
+      baseInput({
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.warnings).toEqual([
+      'Failed to write the job summary: summary API unavailable',
+    ])
+  })
+
+  it('still calls setFailed with the frozen message when the fail-closed summary write throws', async () => {
+    const reporter = fakeReporter()
+    reporter.writeSummary = async () => {
+      throw new Error('summary API unavailable')
+    }
+
+    await evaluate(baseInput({ pullRequest: undefined, reporter }))
+
+    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.warnings).toContain('Failed to write the job summary: summary API unavailable')
+  })
+
+  it('renders a meaningful remediation message when no bypass labels are configured', async () => {
+    const reporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        bypassLabelsInput: '',
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.summaries).toEqual([
+      [
+        'Your team is frozen.',
+        '',
+        'At least one pull request participant belongs to @org/team-a.',
+        'No bypass labels are configured for this repository; contact an administrator to proceed.',
+      ].join('\n'),
+    ])
+  })
 })
