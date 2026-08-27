@@ -51,12 +51,18 @@ describe('decide', () => {
   })
 
   it('does not consult teamMembership at all when a bypass label short-circuits', () => {
+    const poisonedTeamMembership = {
+      get(): never {
+        throw new Error('teamMembership should not be consulted when a bypass label matches')
+      },
+    } as unknown as Map<string, Set<string>>
+
     const result = decide({
       frozenTeams: ['@org/team-a'],
       bypassLabels: ['hotfix'],
       prLabels: ['hotfix'],
       participants: ['alice'],
-      teamMembership: new Map(),
+      teamMembership: poisonedTeamMembership,
     })
 
     expect(result).toEqual({ outcome: 'pass', matchedTeams: [] })
