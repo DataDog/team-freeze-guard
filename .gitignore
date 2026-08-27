@@ -1,0 +1,6 @@
+node_modules/
+*.log
+.DS_Store
+
+# dist/ is intentionally NOT ignored: composite actions have no install step,
+# so the bundled output must be committed (see PR 7 of implementation-plan.md).

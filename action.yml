@@ -1,0 +1,33 @@
+name: 'Team freeze guard'
+description: 'Blocks pull requests from frozen GitHub teams unless a configured bypass label is present.'
+
+inputs:
+  bypass-labels:
+    description: 'Newline-delimited list of labels. Any one present on the pull request satisfies the check when a participant belongs to a frozen team.'
+    required: true
+    default: ''
+  frozen-teams:
+    description: 'Newline-delimited list of frozen GitHub team slugs (e.g. @org/team-slug). An empty list disables the freeze.'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    # TODO(PR 7): pin to a reviewed commit SHA and fill in the real scope/policy,
+    # per docs/Internals/octo-sts.md. The org scope and policy are intentionally
+    # not exposed as repository inputs (see README's "Required workflow permissions"
+    # section), so they are hardcoded here once the trust policy is published.
+    - name: Exchange OIDC identity for an org-scoped GitHub token
+      id: octo-sts
+      uses: DataDog/dd-octo-sts-action@REPLACE_WITH_PINNED_SHA
+      with:
+        scope: REPLACE_WITH_ORG/REPLACE_WITH_POLICY
+
+    - name: Evaluate team freeze policy
+      shell: bash
+      run: node "${{ github.action_path }}/dist/index.js"
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        ORG_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        INPUT_BYPASS_LABELS: ${{ inputs.bypass-labels }}
+        INPUT_FROZEN_TEAMS: ${{ inputs.frozen-teams }}
