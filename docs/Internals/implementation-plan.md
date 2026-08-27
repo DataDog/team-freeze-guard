@@ -8,7 +8,7 @@ Working plan for building the `team-freeze-guard` action from the design docs. T
 
 - [x] PR 1 — Project scaffolding
 - [x] PR 2 — Config parsing and validation
-- [ ] PR 3 — Decision engine (pure, no network)
+- [x] PR 3 — Decision engine (pure, no network)
 - [ ] PR 4 — Participant identity resolution (GitHub API adapter)
 - [ ] PR 5 — Team membership resolution (GitHub API adapter)
 - [ ] PR 6 — Action entrypoint: wiring, reporting, fail-closed policy
@@ -64,7 +64,7 @@ Source: `docs/Internals/README.md` "Decision algorithm" section (canonical order
   - Otherwise intersect `participants` against `teamMembership` (team → member-login set): no intersection → pass; intersection → fail, returning the matched team names (for the job summary — never the matched user list, per the "avoid exposing unnecessary org membership information" rule in `docs/Internals/README.md`).
 - `test/decision.test.ts`: cover every row of README's "Expected behavior" table, plus any-match across multiple frozen teams, any-match across multiple bypass labels, and case-sensitive label matching.
 
-**Status: implemented, under review.** Deviations from the plan:
+**Deviations from the plan:**
 - `src/decision.ts` and `test/decision.test.ts` were initially written without a local Node/npm environment; Node was later installed and `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` were all run and verified passing locally.
 - The PR 1 carried-forward housekeeping is now **done**: `npm install` was run to generate and commit `package-lock.json`, `ci.yml`'s install step switched from `npm install` to `npm ci`, and `cache: npm` re-enabled on the `setup-node` step.
 
@@ -78,6 +78,10 @@ Source: `docs/Internals/participant-identity-resolution.md`.
   - Track unmapped author/committer identities separately for warning logs — never fail or block on them, never treat them as participants.
   - Let unexpected/rate-limited responses throw — PR 6 catches and fails closed.
 - `test/github/participants.test.ts` (mocked Octokit transport or `nock`): author-only PR, multi-commit PR, mapped vs. unmapped identities, duplicate logins across commits, multi-page pagination.
+
+**Status: implemented, not yet reviewed.** Deviations from the plan:
+- Uses a hand-written fake Octokit object (matching the shape `{ rest: { pulls: { listCommits } }, paginate }`) rather than `nock`, since no HTTP transport needs mocking — `octokit.paginate` is the only surface `resolveParticipants` touches, so a fake is simpler than intercepting HTTP. Pagination *consumption* itself is Octokit's own responsibility; the test verifies `resolveParticipants` delegates to `paginate` with the right route/params and processes every returned commit, rather than re-testing Octokit's pagination internals.
+- Verified locally: `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` all pass.
 
 ## PR 5 — Team membership resolution (GitHub API adapter)
 
