@@ -9,7 +9,7 @@ Working plan for building the `team-freeze-guard` action from the design docs. T
 - [x] PR 1 — Project scaffolding
 - [x] PR 2 — Config parsing and validation
 - [x] PR 3 — Decision engine (pure, no network)
-- [ ] PR 4 — Participant identity resolution (GitHub API adapter)
+- [x] PR 4 — Participant identity resolution (GitHub API adapter)
 - [ ] PR 5 — Team membership resolution (GitHub API adapter)
 - [ ] PR 6 — Action entrypoint: wiring, reporting, fail-closed policy
 - [ ] PR 7 — Bundling pipeline and policy-file protection
@@ -93,6 +93,12 @@ Source: `docs/Internals/README.md` "Team membership resolution" section.
   - An unknown/inaccessible team (404/403) is a distinct, typed `TeamResolutionError` — not swallowed, becomes a fail-closed error in PR 6.
   - Fully consume pagination; any pagination/rate-limit failure also becomes a `TeamResolutionError`.
 - `test/github/teams.test.ts`: single team, multiple teams, pagination, unknown team (404), inaccessible team (403), rate-limited response.
+
+**Status: implemented, not yet reviewed.** Deviations from the plan:
+- `TeamResolutionError` is thrown (not returned as a value like `ConfigError`), matching `participants.ts`'s "let unexpected responses throw, PR 6 catches" convention rather than `config.ts`'s returned-union convention.
+- Uses a hand-written fake Octokit exposing `rest.teams.listMembersInOrg` plus a minimal `paginate` implementation (stops when a page returns fewer than `per_page` items), rather than `nock`, matching the approach used for `participants.test.ts`.
+- `resolveTeamMembership()` takes `teamHandles: string[]` in the config's `@org/team-slug` form (not a bare `team_slug`), since that's the form `frozenTeams` entries and `decide()`'s comparisons use elsewhere in the codebase. Internally it extracts the bare slug for the GitHub API request (`team_slug` must not include the `@org/` prefix), while the returned `Map`'s keys stay as the full handle, so callers never need to reconcile two different team-name representations. Also splits 404 ("unknown team") from 403 ("inaccessible team") error messages, since a permission failure is a different operational problem than a nonexistent team.
+- Verified locally: `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` all pass.
 
 ## PR 6 — Action entrypoint: wiring, reporting, fail-closed policy
 
