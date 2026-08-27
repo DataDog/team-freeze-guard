@@ -4,7 +4,7 @@ import { resolveParticipants } from '../../src/github/participants'
 interface CommitFixture {
   committer: { login: string } | null
   commit: {
-    committer: { name: string } | null
+    committer: { name: string; email: string } | null
   }
 }
 
@@ -55,10 +55,13 @@ describe('resolveParticipants', () => {
     expect(result.logins).toEqual(['alice'])
   })
 
-  it('reports an unmapped head committer identity separately, not as a participant', async () => {
+  it('reports an unmapped head committer identity as name and email, not as a participant', async () => {
     const result = await resolveParticipants({
       octokit: fakeOctokit(
-        commit({ committer: null, commit: { committer: { name: 'Unmapped Committer <a@example.com>' } } }),
+        commit({
+          committer: null,
+          commit: { committer: { name: 'Unmapped Committer', email: 'a@example.com' } },
+        }),
       ),
       owner: 'org',
       repo: 'repo',

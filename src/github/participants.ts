@@ -25,14 +25,26 @@ export async function resolveParticipants(input: ResolveParticipantsInput): Prom
     ref: input.headSha,
   })
 
-  recordIdentity(commit.committer?.login ?? null, commit.commit.committer?.name ?? null, logins, unmappedIdentities)
+  recordIdentity(
+    commit.committer?.login ?? null,
+    formatUnmappedIdentity(commit.commit.committer?.name, commit.commit.committer?.email),
+    logins,
+    unmappedIdentities,
+  )
 
   return { logins: [...logins], unmappedIdentities: [...unmappedIdentities] }
 }
 
+function formatUnmappedIdentity(name: string | undefined, email: string | undefined): string | null {
+  if (!name) {
+    return null
+  }
+  return email ? `${name} <${email}>` : name
+}
+
 function recordIdentity(
   login: string | null,
-  unmappedName: string | null,
+  unmappedIdentity: string | null,
   logins: Set<string>,
   unmappedIdentities: Set<string>,
 ): void {
@@ -40,7 +52,7 @@ function recordIdentity(
     logins.add(login)
     return
   }
-  if (unmappedName) {
-    unmappedIdentities.add(unmappedName)
+  if (unmappedIdentity) {
+    unmappedIdentities.add(unmappedIdentity)
   }
 }
