@@ -8,13 +8,15 @@ interface CommitFixture {
   }
 }
 
-function fakeOctokit(commits: CommitFixture[], paginateCalls: unknown[][] = []) {
-  const listCommits = Symbol('listCommits')
+function fakeOctokit(commit: CommitFixture, getCommitCalls: unknown[][] = []) {
   return {
-    rest: { pulls: { listCommits } },
-    paginate: async (route: unknown, params: unknown) => {
-      paginateCalls.push([route, params])
-      return commits
+    rest: {
+      repos: {
+        getCommit: async (params: unknown) => {
+          getCommitCalls.push([params])
+          return { data: commit }
+        },
+      },
     },
   } as unknown as Parameters<typeof resolveParticipants>[0]['octokit']
 }
@@ -28,54 +30,39 @@ function commit(overrides: Partial<CommitFixture> = {}): CommitFixture {
 }
 
 describe('resolveParticipants', () => {
-  it('includes the PR author even with no commits', async () => {
+  it('includes the PR author alongside the head commit committer', async () => {
     const result = await resolveParticipants({
-      octokit: fakeOctokit([]),
+      octokit: fakeOctokit(commit({ committer: { login: 'bob' } })),
       owner: 'org',
       repo: 'repo',
-      pullNumber: 1,
-      prAuthorLogin: 'alice',
-    })
-
-    expect(result).toEqual({ logins: ['alice'], unmappedIdentities: [] })
-  })
-
-  it('collects GitHub-linked commit committers across multiple commits', async () => {
-    const result = await resolveParticipants({
-      octokit: fakeOctokit([commit({ committer: { login: 'bob' } }), commit({ committer: { login: 'dave' } })]),
-      owner: 'org',
-      repo: 'repo',
-      pullNumber: 1,
-      prAuthorLogin: 'alice',
-    })
-
-    expect(result.logins.sort()).toEqual(['alice', 'bob', 'dave'])
-    expect(result.unmappedIdentities).toEqual([])
-  })
-
-  it('deduplicates repeated committer logins across commits and against the PR author', async () => {
-    const result = await resolveParticipants({
-      octokit: fakeOctokit([commit({ committer: { login: 'alice' } }), commit({ committer: { login: 'bob' } })]),
-      owner: 'org',
-      repo: 'repo',
-      pullNumber: 1,
+      headSha: 'abc123',
       prAuthorLogin: 'alice',
     })
 
     expect(result.logins.sort()).toEqual(['alice', 'bob'])
+    expect(result.unmappedIdentities).toEqual([])
   })
 
-  it('reports unmapped committer identities separately, not as participants', async () => {
+  it('deduplicates when the head committer is the same as the PR author', async () => {
     const result = await resolveParticipants({
-      octokit: fakeOctokit([
-        commit({
-          committer: null,
-          commit: { committer: { name: 'Unmapped Committer <a@example.com>' } },
-        }),
-      ]),
+      octokit: fakeOctokit(commit({ committer: { login: 'alice' } })),
       owner: 'org',
       repo: 'repo',
-      pullNumber: 1,
+      headSha: 'abc123',
+      prAuthorLogin: 'alice',
+    })
+
+    expect(result.logins).toEqual(['alice'])
+  })
+
+  it('reports an unmapped head committer identity separately, not as a participant', async () => {
+    const result = await resolveParticipants({
+      octokit: fakeOctokit(
+        commit({ committer: null, commit: { committer: { name: 'Unmapped Committer <a@example.com>' } } }),
+      ),
+      owner: 'org',
+      repo: 'repo',
+      headSha: 'abc123',
       prAuthorLogin: 'alice',
     })
 
@@ -83,34 +70,18 @@ describe('resolveParticipants', () => {
     expect(result.unmappedIdentities).toEqual(['Unmapped Committer <a@example.com>'])
   })
 
-  it('deduplicates repeated unmapped identities', async () => {
-    const result = await resolveParticipants({
-      octokit: fakeOctokit([
-        commit({ commit: { committer: { name: 'Same Unmapped' } } }),
-        commit({ commit: { committer: { name: 'Same Unmapped' } } }),
-      ]),
-      owner: 'org',
-      repo: 'repo',
-      pullNumber: 1,
-      prAuthorLogin: 'alice',
-    })
-
-    expect(result.unmappedIdentities).toEqual(['Same Unmapped'])
-  })
-
-  it('fully consumes pagination by delegating to octokit.paginate', async () => {
-    const paginateCalls: unknown[][] = []
-    const octokit = fakeOctokit([commit({ committer: { login: 'bob' } })], paginateCalls)
+  it('fetches only the pull request head commit, not the full commit history', async () => {
+    const getCommitCalls: unknown[][] = []
+    const octokit = fakeOctokit(commit({ committer: { login: 'bob' } }), getCommitCalls)
 
     await resolveParticipants({
       octokit,
       owner: 'org',
       repo: 'repo',
-      pullNumber: 42,
+      headSha: 'deadbeef',
       prAuthorLogin: 'alice',
     })
 
-    expect(paginateCalls).toHaveLength(1)
-    expect(paginateCalls[0][1]).toEqual({ owner: 'org', repo: 'repo', pull_number: 42 })
+    expect(getCommitCalls).toEqual([[{ owner: 'org', repo: 'repo', ref: 'deadbeef' }]])
   })
 })

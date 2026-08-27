@@ -72,15 +72,16 @@ Source: `docs/Internals/README.md` "Decision algorithm" section (canonical order
 
 Source: `docs/Internals/participant-identity-resolution.md`.
 
-- `src/github/participants.ts`: given an Octokit client + PR number, return the deduplicated set of GitHub logins:
+- `src/github/participants.ts`: given an Octokit client + the pull request's head SHA, return the deduplicated set of GitHub logins:
   - `pull_request.user.login`.
-  - Paginate `GET /repos/{owner}/{repo}/pulls/{pull_number}/commits` (use Octokit's `paginate` — pagination must be fully consumed), collect `commit.committer.login` only where GitHub has linked an account. Commit *authorship* is intentionally not checked — see `docs/limitations.md`.
-  - Track unmapped committer identities separately for warning logs — never fail or block on them, never treat them as participants.
+  - A single `GET /repos/{owner}/{repo}/commits/{sha}` call against `pull_request.head.sha` — not a paginated list of every commit — collecting `commit.committer.login` only where GitHub has linked an account. Commit *authorship* is intentionally not checked, and only the head commit is checked, not the full commit history — see `docs/limitations.md` for both tradeoffs.
+  - Track an unmapped committer identity separately for warning logs — never fail or block on it, never treat it as a participant.
   - Let unexpected/rate-limited responses throw — PR 6 catches and fails closed.
-- `test/github/participants.test.ts` (mocked Octokit transport or `nock`): author-only PR, multi-commit PR, mapped vs. unmapped identities, duplicate logins across commits, multi-page pagination.
+- `test/github/participants.test.ts` (mocked Octokit transport or `nock`): PR author alone, author + mapped head committer, deduplication when they're the same login, unmapped head committer identity, asserting only the head commit is fetched (not a commit list).
 
 **Status: implemented, not yet reviewed.** Deviations from the plan:
-- Uses a hand-written fake Octokit object (matching the shape `{ rest: { pulls: { listCommits } }, paginate }`) rather than `nock`, since no HTTP transport needs mocking — `octokit.paginate` is the only surface `resolveParticipants` touches, so a fake is simpler than intercepting HTTP. Pagination *consumption* itself is Octokit's own responsibility; the test verifies `resolveParticipants` delegates to `paginate` with the right route/params and processes every returned commit, rather than re-testing Octokit's pagination internals.
+- The plan originally called for paginating every commit on the pull request and collecting both author and committer logins across all of them. This was narrowed twice during review: first to committer-only (dropping commit-author resolution), then to the head commit only (dropping full commit-history pagination) — a single `GET .../commits/{sha}` call replaces `octokit.paginate(...pulls.listCommits...)` entirely. Both tradeoffs are documented in `docs/limitations.md`.
+- Uses a hand-written fake Octokit object (matching the shape `{ rest: { repos: { getCommit } } }`) rather than `nock`, since no HTTP transport needs mocking — `getCommit` is the only surface `resolveParticipants` touches.
 - Verified locally: `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` all pass.
 
 ## PR 5 — Team membership resolution (GitHub API adapter)

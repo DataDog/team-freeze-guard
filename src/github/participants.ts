@@ -6,7 +6,7 @@ export interface ResolveParticipantsInput {
   octokit: Octokit
   owner: string
   repo: string
-  pullNumber: number
+  headSha: string
   prAuthorLogin: string
 }
 
@@ -19,15 +19,13 @@ export async function resolveParticipants(input: ResolveParticipantsInput): Prom
   const logins = new Set<string>([input.prAuthorLogin])
   const unmappedIdentities = new Set<string>()
 
-  const commits = await input.octokit.paginate(input.octokit.rest.pulls.listCommits, {
+  const { data: commit } = await input.octokit.rest.repos.getCommit({
     owner: input.owner,
     repo: input.repo,
-    pull_number: input.pullNumber,
+    ref: input.headSha,
   })
 
-  for (const commit of commits) {
-    recordIdentity(commit.committer?.login ?? null, commit.commit.committer?.name ?? null, logins, unmappedIdentities)
-  }
+  recordIdentity(commit.committer?.login ?? null, commit.commit.committer?.name ?? null, logins, unmappedIdentities)
 
   return { logins: [...logins], unmappedIdentities: [...unmappedIdentities] }
 }

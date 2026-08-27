@@ -27,7 +27,7 @@ if frozen-teams is empty:
 if any bypass-labels entry is present on the pull request:
     pass
 
-collect PR author and GitHub-linked commit committers
+collect PR author and the GitHub-linked committer of the current head commit
 resolve the active members of every frozen team
 find intersections between participants and frozen teams
 

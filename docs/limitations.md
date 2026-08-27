@@ -25,9 +25,20 @@ Participant identity resolution uses the GitHub-linked commit committer only (se
 
 ## Commit authorship is not checked
 
-Participant identity resolution only considers the pull request author and the GitHub-linked *committer* of each commit — not the commit *author*. This is a deliberate simplicity tradeoff: checking committer alone is simpler to implement and reason about than also resolving and deduplicating commit authors.
+Participant identity resolution only considers the pull request author and the GitHub-linked *committer* of the current head commit — not the commit *author*. This is a deliberate simplicity tradeoff: checking committer alone is simpler to implement and reason about than also resolving and deduplicating commit authors.
 
-The consequence: a frozen-team engineer can ask a teammate to open the pull request and commit on their behalf (e.g. via `git commit --author`), which the check cannot detect — the frozen engineer never appears as the PR author or as a committer on any commit. This is treated as an accepted gap, not a technical bypass to close: circumventing a freeze by asking a colleague to front a change on your behalf is a process/HR issue, not something this check is expected to prevent.
+The consequence: a frozen-team engineer can ask a teammate to open the pull request and commit on their behalf (e.g. via `git commit --author`), which the check cannot detect — the frozen engineer never appears as the PR author or as a committer. This is treated as an accepted gap, not a technical bypass to close: circumventing a freeze by asking a colleague to front a change on your behalf is a process/HR issue, not something this check is expected to prevent.
+
+## Only the head commit is checked
+
+Participant identity resolution fetches only the pull request's current head commit (`pull_request.head.sha`), not every commit in the pull request's history. This is a deliberate cost/simplicity tradeoff: one API call per evaluation instead of a paginated list of every commit.
+
+The consequence: a commit's committer is only checked at the moment it becomes (or is part of establishing) the head commit under evaluation. In practice this means:
+
+- A `synchronize` event re-evaluates the new head commit each time commits are pushed, so an individual push is checked as it happens.
+- However, if a pull request is opened from a branch that already contained multiple commits (or a force-push replaces several commits at once), only the resulting head commit's committer is checked — the committers of the other, non-head commits bundled into that same event are not.
+
+This is an accepted scope limitation, not a bypass GitHub itself can close: checking every commit would require paginating the full commit list on every evaluation, which is the API cost this design deliberately avoids.
 
 ## Merge queues
 
