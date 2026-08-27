@@ -72,7 +72,7 @@ Team names must be GitHub team slugs, not display names. For example, configure 
 
 `frozen-teams` is a newline-delimited list, one `@org/team-slug` per line, as shown above. Blank lines are ignored. Every team must belong to the same GitHub organization as the repository; a team from another organization is rejected as a configuration error, since the Octo STS token is scoped to a single organization.
 
-`bypass-labels` is also a newline-delimited list, one label name per line. A pull request needs only one of the configured labels to satisfy the check; matching is case-insensitive.
+`bypass-labels` is also a newline-delimited list, one label name per line. A pull request needs only one of the configured labels to satisfy the check; matching is case-sensitive, so a configured label must match the pull request's label exactly.
 
 Do not add a checkout step. The action reads the pull request and the trusted configuration through the `with` blocks; it must never execute code from the pull request branch.
 
@@ -89,7 +89,7 @@ An empty `frozen-teams` values means that no check is performed (no code freeze)
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
-| `bypass-labels` | Yes | None | Newline-delimited list of labels; any one present satisfies the check when a participant belongs to a frozen team. Matching is case-insensitive. |
+| `bypass-labels` | Yes | None | Newline-delimited list of labels; any one present satisfies the check when a participant belongs to a frozen team. Matching is case-sensitive. |
 | `frozen-teams` | Yes | None | Newline-delimited list of frozen GitHub team slugs. An empty list disables all freezes. |
 
 

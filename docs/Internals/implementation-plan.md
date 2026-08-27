@@ -49,6 +49,10 @@ Source: README.md "Configuration fields" + "Team names must be GitHub team slugs
   - Return a typed `ConfigError` (not a generic thrown `Error`) so PR 6 can map it to the fail-closed path uniformly alongside the other error types from PR 4/5.
 - `test/config.test.ts`: valid lists, empty `frozen-teams`, missing required input, malformed slug, wrong-org slug, blank-line handling, duplicate entries.
 
+**Status: implemented, not yet reviewed.** Deviations from the plan:
+- Same environment constraint as PR 1: no Node.js/npm available in the sandbox that wrote this PR, so `src/config.ts` and `test/config.test.ts` have never been installed, linted, type-checked, or run locally — CI is still the first real execution of this code.
+- The PR 1 carried-forward housekeeping (`npm install` to generate `package-lock.json`, then switching `ci.yml`'s `npm install` to `npm ci`) is **still not done**, for the same reason. This remains an open follow-up for whoever has a working Node/npm environment.
+
 ## PR 3 — Decision engine (pure, no network)
 
 Source: `docs/Internals/README.md` "Decision algorithm" section (canonical order: empty frozen-teams → pass; bypass-label present → pass; else resolve participants/teams and check intersection).
@@ -56,9 +60,9 @@ Source: `docs/Internals/README.md` "Decision algorithm" section (canonical order
 - `src/decision.ts`, pure function:
   `decide({ frozenTeams, bypassLabels, prLabels, participants, teamMembership }) -> { outcome: 'pass' | 'fail', matchedTeams: string[] }`
   - `frozenTeams` empty → pass.
-  - Any `bypassLabels` entry present in `prLabels` (case-insensitive) → pass, **without needing `teamMembership` at all** — this mirrors "the label check runs before team-membership resolution" and lets PR 6 skip fetching team membership entirely when it short-circuits here.
+  - Any `bypassLabels` entry present in `prLabels` (case-sensitive, exact match) → pass, **without needing `teamMembership` at all** — this mirrors "the label check runs before team-membership resolution" and lets PR 6 skip fetching team membership entirely when it short-circuits here.
   - Otherwise intersect `participants` against `teamMembership` (team → member-login set): no intersection → pass; intersection → fail, returning the matched team names (for the job summary — never the matched user list, per the "avoid exposing unnecessary org membership information" rule in `docs/Internals/README.md`).
-- `test/decision.test.ts`: cover every row of README's "Expected behavior" table, plus any-match across multiple frozen teams, any-match across multiple bypass labels, and case-insensitive label matching.
+- `test/decision.test.ts`: cover every row of README's "Expected behavior" table, plus any-match across multiple frozen teams, any-match across multiple bypass labels, and case-sensitive label matching.
 
 ## PR 4 — Participant identity resolution (GitHub API adapter)
 
