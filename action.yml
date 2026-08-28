@@ -9,7 +9,7 @@ inputs:
   frozen-teams:
     description: 'Newline-delimited list of frozen GitHub team slugs (e.g. @org/team-slug). An empty list disables the freeze.'
     required: true
-    # Intentionally invalid rather than '': a caller that forgets to pass this
+    # Intentionally invalid: a caller that forgets to pass this
     # input must fail closed (ConfigError), not be silently treated the same
     # as a caller who explicitly disables the freeze with frozen-teams: ''.
     default: '__frozen-teams-not-set__'
@@ -17,27 +17,11 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    # Both cases below make the outcome a foregone pass without needing any external call, so
-    # this step decides up front whether to skip the rest of the action entirely:
-    #   - frozen-teams is empty once blank lines are stripped. inputs.frozen-teams != '' alone
-    #     isn't enough here, since a whitespace-only or newline-only value (e.g. "\n \n") is also
-    #     "no frozen teams" as far as dist/index.js's own parsing is concerned, but isn't the
-    #     literal '' string. The "not set" sentinel default above is deliberately NOT treated as
-    #     empty here — an omitted input must still reach dist/index.js and fail closed.
-    #   - a configured bypass label is already present on the pull request. Pull request labels
-    #     are already in the webhook payload (github.event.pull_request.labels), so this needs no
-    #     API call either.
-    #
-    # Trade-off: this also means a malformed frozen-teams value is never caught (dist/index.js's
-    # ConfigError check never runs) when a bypass label happens to be present. Bypass labels are an
-    # explicit, human-applied override, so skipping evaluation entirely once one is present is
-    # consistent with that intent — but it does mean config validation only happens on pull requests
-    # without a bypass label.
-    - name: Early checks (skip when the freeze is disabled or already bypassed)
+    # frozen-teams is empty-like makes the outcome a foregone pass without needing any external call
+    - name: Early checks (skip when the freeze is disabled)
       id: early-checks
       shell: python
       env:
-        BYPASS_LABELS: ${{ inputs.bypass-labels }}
         FROZEN_TEAMS: ${{ inputs.frozen-teams }}
       run: |
         import json
@@ -45,15 +29,8 @@ runs:
 
         frozen_teams_empty = not any(line.strip() for line in os.environ["FROZEN_TEAMS"].splitlines())
 
-        with open(os.environ["GITHUB_EVENT_PATH"]) as f:
-            event = json.load(f)
-        pr_labels = {label["name"] for label in (event.get("pull_request") or {}).get("labels", [])}
-        bypass_labels = {line.strip() for line in os.environ["BYPASS_LABELS"].splitlines() if line.strip()}
-        bypassed = not pr_labels.isdisjoint(bypass_labels)
-
-        skip = frozen_teams_empty or bypassed
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"skip={'true' if skip else 'false'}\n")
+            f.write(f"skip={'true' if frozen_teams_empty else 'false'}\n")
 
     # TODO: fill in the real scope/policy, per docs/Internals/octo-sts.md, once
     # the trust policy for this action is published in DataDog's canonical
