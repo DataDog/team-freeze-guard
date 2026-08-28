@@ -1,1 +1,10 @@
 * @DataDog/apm-reliability-and-performance
+
+# The policy-file equivalent for this action's own repo: action.yml wires the
+# Octo STS token exchange and the built dist/index.js is what actually runs,
+# so a change to any of these three paths changes enforcement behavior.
+# Called out explicitly even though the blanket rule above already covers
+# them, per README's "Protecting the policy files" guidance applied here.
+/action.yml @DataDog/apm-reliability-and-performance
+/src/ @DataDog/apm-reliability-and-performance
+/dist/ @DataDog/apm-reliability-and-performance

@@ -25,3 +25,12 @@ jobs:
       - run: npm test
 
       - run: npm run build
+
+      - name: Verify dist/ is up to date
+        run: |
+          if [ -n "$(git status --porcelain -- dist/)" ]; then
+            git diff -- dist/
+            git status --porcelain -- dist/
+            echo "::error::dist/ is out of date with src/. Run 'npm run build' and commit the result." >&2
+            exit 1
+          fi
