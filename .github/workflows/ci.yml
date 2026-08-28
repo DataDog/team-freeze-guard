@@ -28,7 +28,9 @@ jobs:
 
       - name: Verify dist/ is up to date
         run: |
-          if ! git diff --exit-code -- dist/; then
+          if [ -n "$(git status --porcelain -- dist/)" ]; then
+            git diff -- dist/
+            git status --porcelain -- dist/
             echo "::error::dist/ is out of date with src/. Run 'npm run build' and commit the result." >&2
             exit 1
           fi
