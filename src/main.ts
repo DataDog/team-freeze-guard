@@ -48,7 +48,7 @@ export async function evaluate(input: EvaluateInput): Promise<void> {
 }
 
 async function reportFailClosed(reporter: Reporter, error: unknown): Promise<void> {
-  reporter.warning(error instanceof Error ? error.message : String(error))
+  reporter.warning(formatError(error))
   await safeWriteSummary(reporter, FAIL_CLOSED_SUMMARY)
   reporter.setFailed(FROZEN_MESSAGE)
 }
@@ -57,9 +57,18 @@ async function safeWriteSummary(reporter: Reporter, markdown: string): Promise<v
   try {
     await reporter.writeSummary(markdown)
   } catch (error) {
-    reporter.warning(
-      `Failed to write the job summary: ${error instanceof Error ? error.message : String(error)}`,
-    )
+    reporter.warning(`Failed to write the job summary: ${formatError(error)}`)
+  }
+}
+
+function formatError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.stack ?? error.message
+  }
+  try {
+    return JSON.stringify(error)
+  } catch {
+    return String(error)
   }
 }
 
