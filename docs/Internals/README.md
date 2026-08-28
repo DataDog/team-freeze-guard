@@ -41,8 +41,12 @@ The label check runs before team-membership resolution so that a pull request ca
 
 The `frozen-teams`-empty and bypass-label short circuits are stricter than that: they must skip **every** external call, not just the participant and team-membership API calls made from within the evaluator. In particular, the Octo STS token exchange in `action.yml` is itself an external call (one request to Octo STS, distinct from the one-request-per-frozen-team calls made during team-membership resolution) and must not run either when `frozen-teams` is empty or a bypass label already matches. `action.yml` enforces both directly, before the evaluator (`dist/index.js`) is ever invoked:
 
-- Both the Octo STS step and the step that invokes `dist/index.js` are conditioned on `inputs.frozen-teams != ''`, so an empty configuration never starts the evaluator at all.
-- A bypass-label check runs first, as a `shell: python` step: pull request labels are already present in the webhook payload (`github.event.pull_request.labels`), so matching them against `bypass-labels` needs no API call at all. When a label matches, the same two steps are skipped, so a bypassed pull request also makes zero external calls.
+A single `shell: python` step, "Early checks," runs first and decides whether to skip the rest of the action, via a `skip` output that both the Octo STS step and the step that invokes `dist/index.js` are conditioned on:
+
+- `frozen-teams` is empty once blank lines are stripped. `inputs.frozen-teams != ''` alone isn't enough here, since a whitespace-only or newline-only value (e.g. `"\n \n"`) is also "no frozen teams" as far as `dist/index.js`'s own parsing is concerned, but isn't the literal `''` string — this step normalizes the same way `splitLines` in `src/config.ts` does before comparing. The `"not set"` sentinel default is deliberately **not** treated as empty here, so an omitted input still reaches `dist/index.js` and fails closed.
+- a configured bypass label is already present on the pull request. Pull request labels are already in the webhook payload (`github.event.pull_request.labels`), so matching them against `bypass-labels` needs no API call at all.
+
+Either condition alone is enough to skip both external-call steps, so an empty (or whitespace-only) configuration and an already-bypassed pull request both make zero external calls.
 
 This means config validation (the `ConfigError` checks below) only runs once `dist/index.js` actually starts — a malformed `frozen-teams` value on a pull request that already carries a matching bypass label is never reported, since evaluation is skipped entirely before reaching that check. This is treated as an acceptable trade-off: a bypass label is an explicit, human-applied override of the freeze outcome, so skipping evaluation once one is present is consistent with that intent, but it does mean configuration mistakes surface only on pull requests without a bypass label.
 

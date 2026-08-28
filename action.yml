@@ -17,58 +17,58 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    # Pull request labels are already in the webhook payload (github.event.pull_request.labels),
-    # so checking for a bypass label needs no API call — unlike resolving participants or team
-    # membership, which do. Doing this first means a pull request carrying a bypass label costs
-    # zero external calls: no Octo STS exchange, no GitHub API calls at all.
+    # Both cases below make the outcome a foregone pass without needing any external call, so
+    # this step decides up front whether to skip the rest of the action entirely:
+    #   - frozen-teams is empty once blank lines are stripped. inputs.frozen-teams != '' alone
+    #     isn't enough here, since a whitespace-only or newline-only value (e.g. "\n \n") is also
+    #     "no frozen teams" as far as dist/index.js's own parsing is concerned, but isn't the
+    #     literal '' string. The "not set" sentinel default above is deliberately NOT treated as
+    #     empty here — an omitted input must still reach dist/index.js and fail closed.
+    #   - a configured bypass label is already present on the pull request. Pull request labels
+    #     are already in the webhook payload (github.event.pull_request.labels), so this needs no
+    #     API call either.
     #
     # Trade-off: this also means a malformed frozen-teams value is never caught (dist/index.js's
     # ConfigError check never runs) when a bypass label happens to be present. Bypass labels are an
     # explicit, human-applied override, so skipping evaluation entirely once one is present is
     # consistent with that intent — but it does mean config validation only happens on pull requests
     # without a bypass label.
-    - name: Check for a bypass label
-      id: check-bypass-label
-      if: inputs.frozen-teams != ''
+    - name: Early checks (skip when the freeze is disabled or already bypassed)
+      id: early-checks
       shell: python
       env:
         BYPASS_LABELS: ${{ inputs.bypass-labels }}
+        FROZEN_TEAMS: ${{ inputs.frozen-teams }}
       run: |
         import json
         import os
 
+        frozen_teams_empty = not any(line.strip() for line in os.environ["FROZEN_TEAMS"].splitlines())
+
         with open(os.environ["GITHUB_EVENT_PATH"]) as f:
             event = json.load(f)
-
         pr_labels = {label["name"] for label in (event.get("pull_request") or {}).get("labels", [])}
         bypass_labels = {line.strip() for line in os.environ["BYPASS_LABELS"].splitlines() if line.strip()}
         bypassed = not pr_labels.isdisjoint(bypass_labels)
 
+        skip = frozen_teams_empty or bypassed
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"bypassed={'true' if bypassed else 'false'}\n")
+            f.write(f"skip={'true' if skip else 'false'}\n")
 
     # TODO: fill in the real scope/policy, per docs/Internals/octo-sts.md, once
     # the trust policy for this action is published in DataDog's canonical
     # Octo STS policy location. The org scope and policy are intentionally not
     # exposed as repository inputs (see README's "Required workflow permissions"
     # section), so this is hardcoded here rather than configurable per caller.
-    #
-    # An empty frozen-teams disables the freeze entirely, and a matched bypass
-    # label makes the outcome a foregone pass — both steps below are skipped
-    # in either case rather than running the evaluator only to have it pass
-    # immediately, so the freeze-disabled and bypassed cases both make zero
-    # external calls and never invoke dist/index.js at all. Only '' skips on
-    # frozen-teams — the "not set" sentinel default above still runs both,
-    # since an omitted input must reach dist/index.js to fail closed.
     - name: Exchange OIDC identity for an org-scoped GitHub token
       id: octo-sts
-      if: inputs.frozen-teams != '' && steps.check-bypass-label.outputs.bypassed != 'true'
+      if: steps.early-checks.outputs.skip != 'true'
       uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
       with:
         scope: REPLACE_WITH_ORG/REPLACE_WITH_POLICY
 
     - name: Evaluate team freeze policy
-      if: inputs.frozen-teams != '' && steps.check-bypass-label.outputs.bypassed != 'true'
+      if: steps.early-checks.outputs.skip != 'true'
       shell: bash
       run: node "${{ github.action_path }}/dist/index.js"
       env:
