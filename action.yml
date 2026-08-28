@@ -19,8 +19,8 @@ runs:
   steps:
     # Pull request labels are already in the webhook payload (github.event.pull_request.labels),
     # so checking for a bypass label needs no API call — unlike resolving participants or team
-    # membership, which do. Doing this first in bare bash means a pull request carrying a bypass
-    # label costs zero external calls: no Octo STS exchange, no GitHub API calls at all.
+    # membership, which do. Doing this first means a pull request carrying a bypass label costs
+    # zero external calls: no Octo STS exchange, no GitHub API calls at all.
     #
     # Trade-off: this also means a malformed frozen-teams value is never caught (dist/index.js's
     # ConfigError check never runs) when a bypass label happens to be present. Bypass labels are an
@@ -30,20 +30,22 @@ runs:
     - name: Check for a bypass label
       id: check-bypass-label
       if: inputs.frozen-teams != ''
-      shell: bash
+      shell: python
       env:
         BYPASS_LABELS: ${{ inputs.bypass-labels }}
       run: |
-        bypassed=false
-        while IFS= read -r raw_label; do
-          label="$(printf '%s' "$raw_label" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
-          [ -z "$label" ] && continue
-          if jq -e --arg label "$label" '[(.pull_request.labels // [])[].name] | index($label) != null' "$GITHUB_EVENT_PATH" > /dev/null; then
-            bypassed=true
-            break
-          fi
-        done <<< "$BYPASS_LABELS"
-        echo "bypassed=$bypassed" >> "$GITHUB_OUTPUT"
+        import json
+        import os
+
+        with open(os.environ["GITHUB_EVENT_PATH"]) as f:
+            event = json.load(f)
+
+        pr_labels = {label["name"] for label in (event.get("pull_request") or {}).get("labels", [])}
+        bypass_labels = {line.strip() for line in os.environ["BYPASS_LABELS"].splitlines() if line.strip()}
+        bypassed = not pr_labels.isdisjoint(bypass_labels)
+
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"bypassed={'true' if bypassed else 'false'}\n")
 
     # TODO: fill in the real scope/policy, per docs/Internals/octo-sts.md, once
     # the trust policy for this action is published in DataDog's canonical
