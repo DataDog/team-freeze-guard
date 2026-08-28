@@ -12,7 +12,7 @@ Working plan for building the `team-freeze-guard` action from the design docs. T
 - [x] PR 4 — Participant identity resolution (GitHub API adapter)
 - [x] PR 5 — Team membership resolution (GitHub API adapter)
 - [x] PR 6 — Action entrypoint: wiring, reporting, fail-closed policy
-- [ ] PR 7 — Bundling pipeline and policy-file protection
+- [x] PR 7 — Bundling pipeline and policy-file protection
 - [ ] Manual end-to-end verification (not a PR — see bottom)
 
 ## Context
@@ -129,6 +129,12 @@ Source: `docs/Internals/README.md` "Check reporting" + "Failure policy"; README'
 - `npm run build` (`ncc build src/main.ts -o dist`) as a committed, CI-checked step: CI runs the build and fails if `git diff --exit-code dist/` is non-empty, so `dist/` can never drift from `src/`.
 - Pin `DataDog/dd-octo-sts-action` in `action.yml` to a real reviewed commit SHA (placeholder since PR 1).
 - Update `.github/CODEOWNERS` to explicitly cover `action.yml`, `src/`, and `dist/` — confirm the current blanket `*` owner is sufficient, or add explicit paths, per README's "Protecting the policy files" guidance applied to this action's own repo.
+
+**Status: implemented, not yet reviewed.** Deviations from the plan:
+- `.github/workflows/ci.yml`'s build step now checks `git diff --exit-code -- dist/` after `npm run build` and fails the job with an annotation if it's non-empty, rather than only running the build without asserting on drift.
+- `DataDog/dd-octo-sts-action` is pinned to `96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a` (tag `v1.0.4`, the latest release at the time of this PR, verified via the GitHub API). The `scope: REPLACE_WITH_ORG/REPLACE_WITH_POLICY` value is **intentionally still a placeholder** — filling it in requires knowing the real trust-policy name published in DataDog's canonical Octo STS policy location (an org-specific artifact this repo has no way to look up or verify), and guessing it risks silently pointing at the wrong or a nonexistent policy. This remains an open follow-up for whoever publishes that trust policy; the TODO comment above the step was updated to reflect that only the SHA is resolved.
+- `.github/CODEOWNERS` keeps the existing blanket `* @DataDog/apm-reliability-and-performance` rule (no separate "CI-owning team" exists to delegate to) and adds explicit `/action.yml`, `/src/`, `/dist/` entries pointing at the same team — redundant given the blanket rule today, but makes the protection of these specific paths an explicit, intentional statement rather than an incidental side effect of the catch-all.
+- Verified locally: `npm run lint`, `npm run typecheck`, `npm test` (53 tests passing), `npm run build`, and a manual `git diff --exit-code -- dist/` all pass with no drift.
 
 ## Manual end-to-end verification (after PR 7, not a PR)
 
