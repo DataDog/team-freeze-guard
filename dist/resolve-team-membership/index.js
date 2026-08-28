@@ -31828,6 +31828,7 @@ module.exports = {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.ConfigError = void 0;
 exports.parseConfig = parseConfig;
+exports.parseFrozenTeamsInput = parseFrozenTeamsInput;
 class ConfigError extends Error {
     constructor(message) {
         super(message);
@@ -31863,6 +31864,12 @@ function parseBypassLabels(raw) {
         }
     }
     return result;
+}
+function parseFrozenTeamsInput(raw, repoOwner) {
+    if (raw === undefined) {
+        return new ConfigError('The "frozen-teams" input is required and must be provided by the calling workflow.');
+    }
+    return parseFrozenTeams(raw, repoOwner);
 }
 function parseFrozenTeams(raw, repoOwner) {
     const seen = new Set();
@@ -32107,19 +32114,15 @@ async function resolveAndOutputTeamMembership(input) {
     }
 }
 async function resolveOrThrow(input) {
-    const config = (0, config_1.parseConfig)({
-        bypassLabels: input.bypassLabelsInput,
-        frozenTeams: input.frozenTeamsInput,
-        repoOwner: input.repoOwner,
-    });
-    if (config instanceof config_1.ConfigError) {
-        input.reporter.setFailed(config.message);
+    const frozenTeams = (0, config_1.parseFrozenTeamsInput)(input.frozenTeamsInput, input.repoOwner);
+    if (frozenTeams instanceof config_1.ConfigError) {
+        input.reporter.setFailed(frozenTeams.message);
         return;
     }
     const membership = await (0, teams_1.resolveTeamMembership)({
         octokit: input.octokit,
         org: input.repoOwner,
-        teamHandles: config.frozenTeams,
+        teamHandles: frozenTeams,
     });
     input.setOutput('team-membership', serializeMembership(membership));
 }
@@ -32137,7 +32140,6 @@ function run() {
 }
 function buildInput(reporter) {
     return {
-        bypassLabelsInput: core.getInput('bypass-labels'),
         frozenTeamsInput: core.getInput('frozen-teams'),
         repoOwner: github_1.context.repo.owner,
         octokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('ORG_TOKEN')),

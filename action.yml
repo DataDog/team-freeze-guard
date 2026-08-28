@@ -17,33 +17,19 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    # Either frozen-teams is empty-like, or a bypass label is already on the PR: both make
-    # the outcome a foregone pass, so skip the Octo STS exchange and every API call below
-    # rather than just skipping the final decision. The bypass-label half of this check is
-    # a duplicate, API-cost-driven fast path for the authoritative one in decide()/src/decision.ts
-    # (case-sensitive set membership, same as there) — this step being wrong only ever costs
-    # an extra API round-trip, never a wrong pass/fail, since decide() still re-checks it.
-    - name: Early checks (skip when the freeze is disabled or a bypass label is already present)
+    # frozen-teams is empty-like makes the outcome a foregone pass without needing any external call
+    - name: Early checks (skip when the freeze is disabled)
       id: early-checks
       shell: python
       env:
         FROZEN_TEAMS: ${{ inputs.frozen-teams }}
-        BYPASS_LABELS: ${{ inputs.bypass-labels }}
-        PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, '\n') }}
       run: |
         import os
 
-        def nonempty_lines(raw):
-            return {line.strip() for line in raw.splitlines() if line.strip()}
-
-        frozen_teams = nonempty_lines(os.environ["FROZEN_TEAMS"])
-        bypass_labels = nonempty_lines(os.environ["BYPASS_LABELS"])
-        pr_labels = nonempty_lines(os.environ["PR_LABELS"])
-
-        skip = not frozen_teams or bool(bypass_labels & pr_labels)
+        frozen_teams_empty = not any(line.strip() for line in os.environ["FROZEN_TEAMS"].splitlines())
 
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"skip={'true' if skip else 'false'}\n")
+            f.write(f"skip={'true' if frozen_teams_empty else 'false'}\n")
 
     # Trust policy: DataDog/.github/.github/chainguard/team-freeze-guard.read-org-members.sts.yaml
     # (see docs/Internals/octo-sts.md). The org scope and policy are intentionally
@@ -59,7 +45,8 @@ runs:
 
     # Split out from "Evaluate team freeze policy" so its result (one API call per frozen
     # team) can be cached across pipeline runs in a follow-up PR, without also caching the
-    # participant-vs-membership decision below.
+    # participant-vs-membership decision below. Only loads members of the configured
+    # frozen-teams; it has no notion of bypass labels.
     - name: Resolve frozen team membership
       id: resolve-team-membership
       if: steps.early-checks.outputs.skip != 'true'
@@ -68,9 +55,8 @@ runs:
       env:
         ORG_TOKEN: ${{ steps.octo-sts.outputs.token }}
         # @actions/core's getInput() only replaces spaces (not dashes) before
-        # uppercasing an input name to its INPUT_ env var, so these must keep
+        # uppercasing an input name to its INPUT_ env var, so this must keep
         # the dash rather than using an underscore.
-        INPUT_BYPASS-LABELS: ${{ inputs.bypass-labels }}
         INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
 
     - name: Evaluate team freeze policy

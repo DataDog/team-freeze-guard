@@ -41,7 +41,6 @@ function fakeOctokit(membersByTeamSlug: Record<string, { login: string }[]>) {
 
 function baseInput(overrides: Partial<ResolveTeamMembershipStepInput> = {}): ResolveTeamMembershipStepInput {
   return {
-    bypassLabelsInput: 'ci-remediation',
     frozenTeamsInput: '@org/team-a',
     repoOwner: 'org',
     octokit: fakeOctokit({ 'team-a': [] }),

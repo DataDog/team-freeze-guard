@@ -31828,6 +31828,7 @@ module.exports = {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.ConfigError = void 0;
 exports.parseConfig = parseConfig;
+exports.parseFrozenTeamsInput = parseFrozenTeamsInput;
 class ConfigError extends Error {
     constructor(message) {
         super(message);
@@ -31863,6 +31864,12 @@ function parseBypassLabels(raw) {
         }
     }
     return result;
+}
+function parseFrozenTeamsInput(raw, repoOwner) {
+    if (raw === undefined) {
+        return new ConfigError('The "frozen-teams" input is required and must be provided by the calling workflow.');
+    }
+    return parseFrozenTeams(raw, repoOwner);
 }
 function parseFrozenTeams(raw, repoOwner) {
     const seen = new Set();

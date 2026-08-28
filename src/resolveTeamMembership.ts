@@ -1,13 +1,12 @@
 import * as core from '@actions/core'
 import { context, getOctokit } from '@actions/github'
-import { ConfigError, parseConfig } from './config'
+import { ConfigError, parseFrozenTeamsInput } from './config'
 import { resolveTeamMembership } from './github/teams'
 import { FROZEN_MESSAGE, buildReporter, getRequiredEnv, reportFailClosed, type Reporter } from './reporting'
 
 type Octokit = ReturnType<typeof getOctokit>
 
 export interface ResolveTeamMembershipStepInput {
-  bypassLabelsInput: string | undefined
   frozenTeamsInput: string | undefined
   repoOwner: string
   octokit: Octokit
@@ -24,21 +23,17 @@ export async function resolveAndOutputTeamMembership(input: ResolveTeamMembershi
 }
 
 async function resolveOrThrow(input: ResolveTeamMembershipStepInput): Promise<void> {
-  const config = parseConfig({
-    bypassLabels: input.bypassLabelsInput,
-    frozenTeams: input.frozenTeamsInput,
-    repoOwner: input.repoOwner,
-  })
+  const frozenTeams = parseFrozenTeamsInput(input.frozenTeamsInput, input.repoOwner)
 
-  if (config instanceof ConfigError) {
-    input.reporter.setFailed(config.message)
+  if (frozenTeams instanceof ConfigError) {
+    input.reporter.setFailed(frozenTeams.message)
     return
   }
 
   const membership = await resolveTeamMembership({
     octokit: input.octokit,
     org: input.repoOwner,
-    teamHandles: config.frozenTeams,
+    teamHandles: frozenTeams,
   })
 
   input.setOutput('team-membership', serializeMembership(membership))
@@ -60,7 +55,6 @@ export function run(): void {
 
 function buildInput(reporter: Reporter): ResolveTeamMembershipStepInput {
   return {
-    bypassLabelsInput: core.getInput('bypass-labels'),
     frozenTeamsInput: core.getInput('frozen-teams'),
     repoOwner: context.repo.owner,
     octokit: getOctokit(getRequiredEnv('ORG_TOKEN')),
