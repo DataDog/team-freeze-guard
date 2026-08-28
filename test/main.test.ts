@@ -81,30 +81,6 @@ describe('evaluate', () => {
     ])
   })
 
-  it('passes immediately without calling any API when frozen-teams is empty', async () => {
-    const reporter = fakeReporter()
-    const octokit = vi.fn()
-    // Constructing the org-scoped client requires exchanging an Octo STS
-    // token, itself an external call, so the freeze-disabled path must never
-    // even invoke this thunk. Throwing on invocation makes that assertion
-    // stronger than a plain spy would: any use fails the test immediately.
-    const orgOctokit = vi.fn(() => {
-      throw new Error('should not construct the org-scoped client when frozen-teams is empty')
-    })
-    await evaluate(
-      baseInput({
-        frozenTeamsInput: '',
-        reporter,
-        octokit: octokit as unknown as EvaluateInput['octokit'],
-        orgOctokit,
-      }),
-    )
-
-    expect(reporter.failures).toEqual([])
-    expect(reporter.infos).toEqual(['No frozen teams are configured; passing.'])
-    expect(orgOctokit).not.toHaveBeenCalled()
-  })
-
   it('fails closed when there is no pull request context', async () => {
     const reporter = fakeReporter()
     await evaluate(baseInput({ pullRequest: undefined, reporter }))

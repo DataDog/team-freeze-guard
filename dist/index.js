@@ -32128,10 +32128,6 @@ async function evaluateOrThrow(input) {
         input.reporter.setFailed(config.message);
         return;
     }
-    if (config.frozenTeams.length === 0) {
-        input.reporter.info('No frozen teams are configured; passing.');
-        return;
-    }
     if (!input.pullRequest) {
         throw new Error('This event does not carry a pull request context.');
     }

@@ -89,11 +89,6 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     return
   }
 
-  if (config.frozenTeams.length === 0) {
-    input.reporter.info('No frozen teams are configured; passing.')
-    return
-  }
-
   if (!input.pullRequest) {
     throw new Error('This event does not carry a pull request context.')
   }
