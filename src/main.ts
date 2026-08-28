@@ -33,7 +33,7 @@ export interface EvaluateInput {
   // requires the Octo STS-issued ORG_TOKEN, which is itself an external call.
   // Deferring construction until team membership is actually resolved means
   // that call is skipped whenever evaluation short-circuits before reaching it
-  // (frozen-teams empty, no pull request context, or a bypass label present).
+  // (no pull request context, or a bypass label present).
   orgOctokit: () => Octokit
   reporter: Reporter
 }

@@ -31901,9 +31901,6 @@ function hasBypassLabel(bypassLabels, prLabels) {
     return bypassLabels.some((label) => labels.has(label));
 }
 function decide(input) {
-    if (input.frozenTeams.length === 0) {
-        return { outcome: 'pass', matchedTeams: [] };
-    }
     if (hasBypassLabel(input.bypassLabels, input.prLabels)) {
         return { outcome: 'pass', matchedTeams: [] };
     }
