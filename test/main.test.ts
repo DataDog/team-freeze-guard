@@ -216,6 +216,23 @@ describe('evaluate', () => {
     expect(reporter.summaries[0]).toContain('could not be evaluated safely')
   })
 
+  it('logs only the error message, never a full stack trace, to avoid leaking internal detail into a possibly public Actions log', async () => {
+    const reporter = fakeReporter()
+    const octokit = {
+      rest: {
+        repos: {
+          getCommit: async () => {
+            throw new Error('boom')
+          },
+        },
+      },
+    } as unknown as EvaluateInput['octokit']
+
+    await evaluate(baseInput({ octokit, reporter }))
+
+    expect(reporter.warnings).toEqual(['boom'])
+  })
+
   it('logs a non-Error throwable as readable JSON instead of "[object Object]"', async () => {
     const reporter = fakeReporter()
     const octokit = {
@@ -258,9 +275,7 @@ describe('evaluate', () => {
     )
 
     expect(reporter.failures).toEqual(['Your team is frozen'])
-    expect(reporter.warnings).toEqual([
-      expect.stringContaining('Failed to write the job summary: Error: summary API unavailable'),
-    ])
+    expect(reporter.warnings).toEqual(['Failed to write the job summary: summary API unavailable'])
   })
 
   it('still calls setFailed with the frozen message when the fail-closed summary write throws', async () => {
@@ -272,11 +287,7 @@ describe('evaluate', () => {
     await evaluate(baseInput({ pullRequest: undefined, reporter }))
 
     expect(reporter.failures).toEqual(['Your team is frozen'])
-    expect(
-      reporter.warnings.some((warning) =>
-        warning.includes('Failed to write the job summary: Error: summary API unavailable'),
-      ),
-    ).toBe(true)
+    expect(reporter.warnings).toContain('Failed to write the job summary: summary API unavailable')
   })
 
   it('renders a meaningful remediation message when no bypass labels are configured', async () => {

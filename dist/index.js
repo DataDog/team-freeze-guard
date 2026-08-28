@@ -32109,7 +32109,7 @@ async function safeWriteSummary(reporter, markdown) {
 }
 function formatError(error) {
     if (error instanceof Error) {
-        return error.stack ?? error.message;
+        return error.message;
     }
     try {
         return JSON.stringify(error);
