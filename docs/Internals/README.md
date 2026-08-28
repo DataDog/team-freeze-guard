@@ -16,13 +16,13 @@ Unknown teams, inaccessible teams, incomplete pagination, rate limiting, and une
 
 ## Decision algorithm
 
-The evaluator applies the following algorithm:
+The action, across `action.yml` and the evaluator (`dist/index.js`) it invokes, applies the following algorithm:
 
 ```text
-load and validate trusted repository configuration
-
 if frozen-teams is empty:
-    pass
+    pass                                    # action.yml, before the evaluator ever runs
+
+load and validate trusted repository configuration
 
 if any bypass-labels entry is present on the pull request:
     pass
@@ -37,7 +37,13 @@ if there are no intersections:
 fail with "Your team is frozen"
 ```
 
-The label check runs before team-membership resolution so that a pull request carrying a configured bypass label never triggers the participant and team-membership API calls: fewer API calls means a faster check and less exposure to transient GitHub/Octo STS infrastructure errors, which fail closed per the Failure policy below.
+The label check runs before team-membership resolution so that a pull request carrying a configured bypass label never triggers the participant and team-membership API calls: fewer API calls means a faster check and less exposure to transient GitHub/Octo STS infrastructure errors, which fail closed per the Failure policy below. This check (`hasBypassLabel` in `src/decision.ts`) stays inside the evaluator rather than moving to `action.yml`, so it still runs after the Octo STS exchange below.
+
+The `frozen-teams`-empty short circuit is stricter than that: it must skip **every** external call, not just the participant and team-membership API calls made from within the evaluator. In particular, the Octo STS token exchange in `action.yml` is itself an external call (one request to Octo STS, distinct from the one-request-per-frozen-team calls made during team-membership resolution) and must not run when `frozen-teams` is empty. `action.yml` enforces this directly, before the evaluator (`dist/index.js`) is ever invoked, via a `shell: python` step, "Early checks," that produces a `skip` output the Octo STS step and the step that invokes `dist/index.js` are both conditioned on:
+
+`frozen-teams` is empty once blank lines are stripped. `inputs.frozen-teams != ''` alone isn't enough here, since a whitespace-only or newline-only value (e.g. `"\n \n"`) is also "no frozen teams" as far as `src/config.ts`'s own parsing would treat it, but isn't the literal `''` string — this step normalizes the same way `splitLines` in `src/config.ts` does before comparing. The `"not set"` sentinel default is deliberately **not** treated as empty here, so an omitted input still reaches `dist/index.js` and fails closed.
+
+This means an empty (or whitespace-only) `frozen-teams` configuration makes zero external calls — no Octo STS exchange, no `dist/index.js` invocation at all — while a bypass label on an otherwise-frozen pull request still costs the Octo STS exchange (needed to fail closed on a malformed config) before `hasBypassLabel` short-circuits the rest of the evaluator.
 
 The policy uses **any-match semantics** on both sides: one frozen participant is enough to require a label, and any one of the configured `bypass-labels` is enough to satisfy it. The participant any-match prevents a frozen engineer from bypassing the policy by opening a pull request through another author or committing directly to an existing pull request. It does not prevent a frozen engineer from asking a teammate to both open the pull request and commit on their behalf — see the "Commit authorship is not checked" limitation in `docs/limitations.md`.
 

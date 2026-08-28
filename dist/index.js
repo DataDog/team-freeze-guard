@@ -31901,9 +31901,6 @@ function hasBypassLabel(bypassLabels, prLabels) {
     return bypassLabels.some((label) => labels.has(label));
 }
 function decide(input) {
-    if (input.frozenTeams.length === 0) {
-        return { outcome: 'pass', matchedTeams: [] };
-    }
     if (hasBypassLabel(input.bypassLabels, input.prLabels)) {
         return { outcome: 'pass', matchedTeams: [] };
     }
@@ -32128,10 +32125,6 @@ async function evaluateOrThrow(input) {
         input.reporter.setFailed(config.message);
         return;
     }
-    if (config.frozenTeams.length === 0) {
-        input.reporter.info('No frozen teams are configured; passing.');
-        return;
-    }
     if (!input.pullRequest) {
         throw new Error('This event does not carry a pull request context.');
     }
@@ -32150,7 +32143,7 @@ async function evaluateOrThrow(input) {
         input.reporter.warning(`Could not map commit identity "${identity}" to a GitHub account; it was not checked against frozen teams.`);
     }
     const teamMembership = await (0, teams_1.resolveTeamMembership)({
-        octokit: input.orgOctokit,
+        octokit: input.orgOctokit(),
         org: input.repoOwner,
         teamHandles: config.frozenTeams,
     });
@@ -32211,7 +32204,7 @@ function buildEvaluateInput(reporter) {
         repoName: github_1.context.repo.repo,
         pullRequest: extractPullRequestContext(),
         octokit: (0, github_1.getOctokit)(getRequiredEnv('GITHUB_TOKEN')),
-        orgOctokit: (0, github_1.getOctokit)(getRequiredEnv('ORG_TOKEN')),
+        orgOctokit: () => (0, github_1.getOctokit)(getRequiredEnv('ORG_TOKEN')),
         reporter,
     };
 }

@@ -9,7 +9,7 @@ inputs:
   frozen-teams:
     description: 'Newline-delimited list of frozen GitHub team slugs (e.g. @org/team-slug). An empty list disables the freeze.'
     required: true
-    # Intentionally invalid rather than '': a caller that forgets to pass this
+    # Intentionally invalid: a caller that forgets to pass this
     # input must fail closed (ConfigError), not be silently treated the same
     # as a caller who explicitly disables the freeze with frozen-teams: ''.
     default: '__frozen-teams-not-set__'
@@ -17,6 +17,21 @@ inputs:
 runs:
   using: 'composite'
   steps:
+    # frozen-teams is empty-like makes the outcome a foregone pass without needing any external call
+    - name: Early checks (skip when the freeze is disabled)
+      id: early-checks
+      shell: python
+      env:
+        FROZEN_TEAMS: ${{ inputs.frozen-teams }}
+      run: |
+        import json
+        import os
+
+        frozen_teams_empty = not any(line.strip() for line in os.environ["FROZEN_TEAMS"].splitlines())
+
+        with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+            f.write(f"skip={'true' if frozen_teams_empty else 'false'}\n")
+
     # TODO: fill in the real scope/policy, per docs/Internals/octo-sts.md, once
     # the trust policy for this action is published in DataDog's canonical
     # Octo STS policy location. The org scope and policy are intentionally not
@@ -24,11 +39,13 @@ runs:
     # section), so this is hardcoded here rather than configurable per caller.
     - name: Exchange OIDC identity for an org-scoped GitHub token
       id: octo-sts
+      if: steps.early-checks.outputs.skip != 'true'
       uses: DataDog/dd-octo-sts-action@96a25462dbcb10ebf0bfd6e2ccc917d2ab235b9a # v1.0.4
       with:
         scope: REPLACE_WITH_ORG/REPLACE_WITH_POLICY
 
     - name: Evaluate team freeze policy
+      if: steps.early-checks.outputs.skip != 'true'
       shell: bash
       run: node "${{ github.action_path }}/dist/index.js"
       env:

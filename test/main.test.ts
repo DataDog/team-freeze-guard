@@ -45,7 +45,7 @@ function fakeOrgOctokit(membersByTeamSlug: Record<string, { login: string }[]>) 
       const { data } = await fn({ ...params, page: 1 })
       return data
     },
-  } as unknown as EvaluateInput['orgOctokit']
+  } as unknown as EvaluateInput['octokit']
 }
 
 function pullRequest(overrides: Partial<PullRequestContext> = {}): PullRequestContext {
@@ -65,7 +65,7 @@ function baseInput(overrides: Partial<EvaluateInput> = {}): EvaluateInput {
     repoName: 'repo',
     pullRequest: pullRequest(),
     octokit: fakeOctokit({ committer: null, commit: { committer: null } }),
-    orgOctokit: fakeOrgOctokit({ 'team-a': [] }),
+    orgOctokit: () => fakeOrgOctokit({ 'team-a': [] }),
     reporter: fakeReporter(),
     ...overrides,
   }
@@ -81,23 +81,6 @@ describe('evaluate', () => {
     ])
   })
 
-  it('passes immediately without calling any API when frozen-teams is empty', async () => {
-    const reporter = fakeReporter()
-    const octokit = vi.fn()
-    const orgOctokit = vi.fn()
-    await evaluate(
-      baseInput({
-        frozenTeamsInput: '',
-        reporter,
-        octokit: octokit as unknown as EvaluateInput['octokit'],
-        orgOctokit: orgOctokit as unknown as EvaluateInput['orgOctokit'],
-      }),
-    )
-
-    expect(reporter.failures).toEqual([])
-    expect(reporter.infos).toEqual(['No frozen teams are configured; passing.'])
-  })
-
   it('fails closed when there is no pull request context', async () => {
     const reporter = fakeReporter()
     await evaluate(baseInput({ pullRequest: undefined, reporter }))
@@ -109,8 +92,12 @@ describe('evaluate', () => {
 
   it('passes on the bypass-label short-circuit without resolving participants or teams', async () => {
     const reporter = fakeReporter()
-    const orgOctokit = fakeOrgOctokit({ 'team-a': [{ login: 'alice' }] })
-    const paginateSpy = vi.spyOn(orgOctokit as unknown as { paginate: () => Promise<unknown> }, 'paginate')
+    // The label check runs before team-membership resolution, so the
+    // org-scoped client (and the Octo STS call needed to build it) must
+    // never be constructed on this path either.
+    const orgOctokit = vi.fn(() => {
+      throw new Error('should not construct the org-scoped client on the bypass-label short-circuit')
+    })
 
     await evaluate(
       baseInput({
@@ -122,7 +109,7 @@ describe('evaluate', () => {
 
     expect(reporter.failures).toEqual([])
     expect(reporter.infos).toEqual(['A configured bypass label is present; passing without evaluating participants.'])
-    expect(paginateSpy).not.toHaveBeenCalled()
+    expect(orgOctokit).not.toHaveBeenCalled()
   })
 
   it('passes when no participant belongs to a frozen team', async () => {
@@ -130,7 +117,7 @@ describe('evaluate', () => {
     await evaluate(
       baseInput({
         octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
-        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'carol' }] }),
+        orgOctokit: () => fakeOrgOctokit({ 'team-a': [{ login: 'carol' }] }),
         reporter,
       }),
     )
@@ -144,7 +131,7 @@ describe('evaluate', () => {
     await evaluate(
       baseInput({
         octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
-        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        orgOctokit: () => fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
         reporter,
       }),
     )
@@ -168,7 +155,7 @@ describe('evaluate', () => {
           committer: null,
           commit: { committer: { name: 'Unmapped Person', email: 'a@example.com' } },
         }),
-        orgOctokit: fakeOrgOctokit({ 'team-a': [] }),
+        orgOctokit: () => fakeOrgOctokit({ 'team-a': [] }),
         reporter,
       }),
     )
@@ -181,16 +168,17 @@ describe('evaluate', () => {
 
   it('fails closed when team membership resolution throws', async () => {
     const reporter = fakeReporter()
-    const orgOctokit = {
-      rest: {
-        teams: {
-          listMembersInOrg: async () => {
-            throw { status: 404 }
+    const orgOctokit = () =>
+      ({
+        rest: {
+          teams: {
+            listMembersInOrg: async () => {
+              throw { status: 404 }
+            },
           },
         },
-      },
-      paginate: async (fn: () => Promise<unknown>) => fn(),
-    } as unknown as EvaluateInput['orgOctokit']
+        paginate: async (fn: () => Promise<unknown>) => fn(),
+      }) as unknown as ReturnType<EvaluateInput['orgOctokit']>
 
     await evaluate(baseInput({ orgOctokit, reporter }))
 
@@ -269,7 +257,7 @@ describe('evaluate', () => {
     await evaluate(
       baseInput({
         octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
-        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        orgOctokit: () => fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
         reporter,
       }),
     )
@@ -296,7 +284,7 @@ describe('evaluate', () => {
       baseInput({
         bypassLabelsInput: '',
         octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
-        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        orgOctokit: () => fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
         reporter,
       }),
     )

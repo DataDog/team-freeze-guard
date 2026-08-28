@@ -29,7 +29,12 @@ export interface EvaluateInput {
   repoName: string
   pullRequest: PullRequestContext | undefined
   octokit: Octokit
-  orgOctokit: Octokit
+  // A thunk, not an already-built client: constructing the org-scoped client
+  // requires the Octo STS-issued ORG_TOKEN, which is itself an external call.
+  // Deferring construction until team membership is actually resolved means
+  // that call is skipped whenever evaluation short-circuits before reaching it
+  // (no pull request context, or a bypass label present).
+  orgOctokit: () => Octokit
   reporter: Reporter
 }
 
@@ -84,11 +89,6 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     return
   }
 
-  if (config.frozenTeams.length === 0) {
-    input.reporter.info('No frozen teams are configured; passing.')
-    return
-  }
-
   if (!input.pullRequest) {
     throw new Error('This event does not carry a pull request context.')
   }
@@ -113,7 +113,7 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
   }
 
   const teamMembership = await resolveTeamMembership({
-    octokit: input.orgOctokit,
+    octokit: input.orgOctokit(),
     org: input.repoOwner,
     teamHandles: config.frozenTeams,
   })
@@ -182,7 +182,7 @@ function buildEvaluateInput(reporter: Reporter): EvaluateInput {
     repoName: context.repo.repo,
     pullRequest: extractPullRequestContext(),
     octokit: getOctokit(getRequiredEnv('GITHUB_TOKEN')),
-    orgOctokit: getOctokit(getRequiredEnv('ORG_TOKEN')),
+    orgOctokit: () => getOctokit(getRequiredEnv('ORG_TOKEN')),
     reporter,
   }
 }

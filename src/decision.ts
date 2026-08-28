@@ -19,10 +19,6 @@ export function hasBypassLabel(bypassLabels: string[], prLabels: string[]): bool
 }
 
 export function decide(input: DecisionInput): Decision {
-  if (input.frozenTeams.length === 0) {
-    return { outcome: 'pass', matchedTeams: [] }
-  }
-
   if (hasBypassLabel(input.bypassLabels, input.prLabels)) {
     return { outcome: 'pass', matchedTeams: [] }
   }
