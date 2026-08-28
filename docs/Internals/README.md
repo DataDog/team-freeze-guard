@@ -39,6 +39,8 @@ fail with "Your team is frozen"
 
 The label check runs before team-membership resolution so that a pull request carrying a configured bypass label never triggers the participant and team-membership API calls: fewer API calls means a faster check and less exposure to transient GitHub/Octo STS infrastructure errors, which fail closed per the Failure policy below.
 
+The `frozen-teams`-empty short circuit is stricter than the others: it must skip **every** external call, not just the participant and team-membership API calls made from within the evaluator. In particular, the Octo STS token exchange in `action.yml` is itself an external call (one request to Octo STS, distinct from the one-request-per-frozen-team calls made during team-membership resolution) and must not run either when `frozen-teams` is empty — a repository with the freeze disabled should make zero external calls, not one. This means the empty-check has to happen at the composite-action step level, before the Octo STS step, not only inside the evaluator that runs after it.
+
 The policy uses **any-match semantics** on both sides: one frozen participant is enough to require a label, and any one of the configured `bypass-labels` is enough to satisfy it. The participant any-match prevents a frozen engineer from bypassing the policy by opening a pull request through another author or committing directly to an existing pull request. It does not prevent a frozen engineer from asking a teammate to both open the pull request and commit on their behalf — see the "Commit authorship is not checked" limitation in `docs/limitations.md`.
 
 ## Check reporting
