@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": []
+  },
+  "enabledPlugins": {
+    "dd-octo-sts@datadog-claude-plugins": true
+  }
+}
