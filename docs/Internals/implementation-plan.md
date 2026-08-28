@@ -10,8 +10,8 @@ Working plan for building the `team-freeze-guard` action from the design docs. T
 - [x] PR 2 — Config parsing and validation
 - [x] PR 3 — Decision engine (pure, no network)
 - [x] PR 4 — Participant identity resolution (GitHub API adapter)
-- [ ] PR 5 — Team membership resolution (GitHub API adapter)
-- [ ] PR 6 — Action entrypoint: wiring, reporting, fail-closed policy
+- [x] PR 5 — Team membership resolution (GitHub API adapter)
+- [x] PR 6 — Action entrypoint: wiring, reporting, fail-closed policy
 - [ ] PR 7 — Bundling pipeline and policy-file protection
 - [ ] Manual end-to-end verification (not a PR — see bottom)
 
@@ -94,10 +94,11 @@ Source: `docs/Internals/README.md` "Team membership resolution" section.
   - Fully consume pagination; any pagination/rate-limit failure also becomes a `TeamResolutionError`.
 - `test/github/teams.test.ts`: single team, multiple teams, pagination, unknown team (404), inaccessible team (403), rate-limited response.
 
-**Status: implemented, not yet reviewed.** Deviations from the plan:
+**Status: implemented and reviewed (merged as GitHub PR #7).** Deviations from the plan:
 - `TeamResolutionError` is thrown (not returned as a value like `ConfigError`), matching `participants.ts`'s "let unexpected responses throw, PR 6 catches" convention rather than `config.ts`'s returned-union convention.
 - Uses a hand-written fake Octokit exposing `rest.teams.listMembersInOrg` plus a minimal `paginate` implementation (stops when a page returns fewer than `per_page` items), rather than `nock`, matching the approach used for `participants.test.ts`.
 - `resolveTeamMembership()` takes `teamHandles: string[]` in the config's `@org/team-slug` form (not a bare `team_slug`), since that's the form `frozenTeams` entries and `decide()`'s comparisons use elsewhere in the codebase. Internally it extracts the bare slug for the GitHub API request (`team_slug` must not include the `@org/` prefix), while the returned `Map`'s keys stay as the full handle, so callers never need to reconcile two different team-name representations. Also splits 404 ("unknown team") from 403 ("inaccessible team") error messages, since a permission failure is a different operational problem than a nonexistent team.
+- Follow-up review round (Copilot) tightened `extractTeamSlug()` to fully validate the `@org/team-slug` pattern (rejecting a missing `@` or an extra path segment) and to check the handle's embedded org against the resolution `org`, rather than only checking for the presence of a `/`.
 - Verified locally: `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` all pass.
 
 ## PR 6 — Action entrypoint: wiring, reporting, fail-closed policy
@@ -114,6 +115,14 @@ Source: `docs/Internals/README.md` "Check reporting" + "Failure policy"; README'
   7. Any thrown error from steps 1/4/5 (API auth failure, `TeamResolutionError`, unexpected response shape) is caught at the top level and treated as a fail-closed result with a distinct summary message ("policy could not be evaluated safely"), per the Failure policy list.
 - Wire `action.yml`'s node step to the real `dist/index.js` output.
 - `test/main.test.ts`, end-to-end through `main()` with mocked Octokit: the label-short-circuit path, the pass path, the fail path (assert summary content), and each fail-closed error path.
+
+**Status: implemented, not yet reviewed.** Deviations from the plan:
+- `src/main.ts` splits into a testable `evaluate(input: EvaluateInput)` (all dependencies passed explicitly: raw config strings, repo owner/name, a `PullRequestContext`, pre-built `octokit`/`orgOctokit` clients, and a `Reporter` abstraction over `core.info`/`core.warning`/`core.setFailed`/`core.summary`) and a thin `run()` composition root that wires the real `@actions/core`/`@actions/github` dependencies. This avoids `vi.mock()` module mocking in `test/main.test.ts`, consistent with the hand-written-fake-Octokit approach used in `participants.test.ts`/`teams.test.ts`. `run()` only executes when the module is invoked directly (`require.main === module`), so importing `evaluate`/`run` from tests doesn't trigger the real entrypoint (which would otherwise throw immediately outside a real Action run, e.g. missing `GITHUB_REPOSITORY`).
+- Discovered and fixed a **latent production bug in `action.yml` dating back to PR 1**: the composite step set `INPUT_BYPASS_LABELS`/`INPUT_FROZEN_TEAMS` (underscore) as env vars, but `@actions/core`'s `getInput()` only replaces *spaces* (not dashes) before uppercasing an input name, so it actually looks up `INPUT_BYPASS-LABELS`/`INPUT_FROZEN-TEAMS` (dash preserved). This never surfaced before because no code called `core.getInput()` for real until this PR. Fixed by renaming the env vars to keep the dash, with an explanatory comment.
+- **Downgraded `@actions/core` from `^3.0.1` to `^2.0.3` and `@actions/github` from `^9.1.1` to `^8.0.1`** (both bumped to the ESM-only versions in the earlier dependency-security-fix PR, whose stub `src/main.ts` never actually imported them, so the incompatibility was never exercised). `@actions/core@3.0.0`/`@actions/github@9.0.0` switched their package `"type"` to `"module"` with an ESM-only `exports` map, which `@vercel/ncc@0.38.4` cannot bundle into the committed CJS `dist/index.js` — `npm run build` failed with a "Package path . is not exported" resolution error as soon as `main.ts` (this PR) imported them for real. `@actions/core@2.0.3`/`@actions/github@8.0.1` are the last CJS-compatible releases and independently verified to have **0 `npm audit` vulnerabilities**, so this downgrade keeps the earlier security fix intact while restoring a working build.
+- Extracted `hasBypassLabel(bypassLabels, prLabels)` out of `decision.ts`'s `decide()` as a shared exported helper, so `main.ts` can reuse the exact same case-sensitive matching logic to short-circuit before calling `participants.ts`/`teams.ts`, rather than duplicating the check.
+- `buildFailureSummary()` matches the README's documented failure-summary format (message, matched team names — never member lists — and the configured bypass labels as remediation).
+- Verified locally: `npm run lint`, `npm run typecheck`, `npm test` (47 tests passing), and `npm run build` all pass.
 
 ## PR 7 — Bundling pipeline and policy-file protection
 

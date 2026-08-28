@@ -13,14 +13,17 @@ export interface DecisionInput {
   teamMembership: Map<string, Set<string>>
 }
 
+export function hasBypassLabel(bypassLabels: string[], prLabels: string[]): boolean {
+  const labels = new Set(prLabels)
+  return bypassLabels.some((label) => labels.has(label))
+}
+
 export function decide(input: DecisionInput): Decision {
   if (input.frozenTeams.length === 0) {
     return { outcome: 'pass', matchedTeams: [] }
   }
 
-  const prLabels = new Set(input.prLabels)
-  const hasBypassLabel = input.bypassLabels.some((label) => prLabels.has(label))
-  if (hasBypassLabel) {
+  if (hasBypassLabel(input.bypassLabels, input.prLabels)) {
     return { outcome: 'pass', matchedTeams: [] }
   }
 
