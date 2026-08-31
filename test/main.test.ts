@@ -123,6 +123,21 @@ describe('evaluate', () => {
     expect(reporter.infos).toEqual(['No participant belongs to a frozen team; passing.'])
   })
 
+  it('resolves membership independently across multiple frozen teams', async () => {
+    const reporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        frozenTeamsInput: '@org/team-a\n@org/team-b',
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'carol' }], 'team-b': [{ login: 'bob' }] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.summaries[0]).toContain('At least one pull request participant belongs to @org/team-b.')
+  })
+
   it('fails with a job summary matching the documented format when a participant belongs to a frozen team', async () => {
     const reporter = fakeReporter()
     await evaluate(
