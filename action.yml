@@ -28,6 +28,9 @@ runs:
 
         frozen_teams_empty = not any(line.strip() for line in os.environ["FROZEN_TEAMS"].splitlines())
 
+        if frozen_teams_empty:
+            print("No frozen teams configured; passing without evaluating participants.")
+
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
             f.write(f"skip={'true' if frozen_teams_empty else 'false'}\n")
 
