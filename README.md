@@ -50,7 +50,6 @@ on:
 permissions:
   id-token: write
   contents: read
-  actions: write # required by actions/cache to write the team-membership cache
 
 jobs:
   team-freeze-guard:
@@ -100,26 +99,12 @@ An empty `frozen-teams` values means that no check is performed (no code freeze)
 | --- | --- |
 | `id-token: write` | Allows `dd-octo-sts-action` to exchange the workflow's OIDC identity for a short-lived GitHub App token. |
 | `contents: read` | Allows the default `GITHUB_TOKEN` to read repository and commit data needed to resolve the head commit's committer. |
-| `actions: write` | Allows `actions/cache` to write the team-membership cache. |
 
 An action cannot grant these permissions to itself; they must be declared by the calling workflow.
 
 Keep `team-freeze-guard` alone in its job. `id-token: write` applies to every step in the job, so unrelated third-party actions should not share the same job.
 
 The organization scope, Octo STS policy name, and Octo STS pool are intentionally controlled by the action rather than exposed as repository inputs.
-
-### Team membership caching
-
-Frozen-team membership (the result of resolving `frozen-teams` into member lists) is cached in the GitHub Actions cache for up to one hour. Within that hour, and for the same `frozen-teams` configuration, subsequent runs reuse the cached membership instead of exchanging a new OIDC token and re-querying team membership for every pull request event.
-
-This is a deliberate tradeoff, not a fixed design constant:
-
-- A **longer** cache lifetime means fewer Octo STS token exchanges and GitHub API calls, which matters on repositories with high pull request activity.
-- A **shorter** cache lifetime means a team membership change (someone added to or removed from a frozen team) is reflected sooner. During the cache window, a pull request can still pass or fail based on membership as it existed up to an hour ago.
-
-One hour was chosen as a middle ground. Cached data is also invalidated immediately, well before the hour is up, if `frozen-teams` itself changes, since the cache key incorporates a hash of that input.
-
-This caching window is on top of the existing limitation that configuration and membership changes do not automatically re-evaluate already-open pull requests — see [`docs/limitations.md`](docs/limitations.md).
 
 ## Enforcing the result with a ruleset
 

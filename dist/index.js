@@ -31970,6 +31970,76 @@ function recordIdentity(login, unmappedIdentity, logins, unmappedIdentities) {
 
 /***/ }),
 
+/***/ 4769:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.TeamResolutionError = void 0;
+exports.resolveTeamMembership = resolveTeamMembership;
+class TeamResolutionError extends Error {
+    constructor(message, options) {
+        super(message, options);
+        this.name = 'TeamResolutionError';
+    }
+}
+exports.TeamResolutionError = TeamResolutionError;
+const TEAM_HANDLE_PATTERN = /^@([^/]+)\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/;
+async function resolveTeamMembership(input) {
+    const membership = new Map();
+    for (const teamHandle of input.teamHandles) {
+        const teamSlug = extractTeamSlug(teamHandle, input.org);
+        membership.set(teamHandle, await listTeamMembers(input.octokit, input.org, teamHandle, teamSlug));
+    }
+    return membership;
+}
+function extractTeamSlug(teamHandle, org) {
+    const match = TEAM_HANDLE_PATTERN.exec(teamHandle);
+    if (!match) {
+        throw new TeamResolutionError(`"${teamHandle}" is not a valid "@org/team-slug" handle.`);
+    }
+    const [, handleOrg, slug] = match;
+    if (handleOrg !== org) {
+        throw new TeamResolutionError(`"${teamHandle}" belongs to organization "${handleOrg}", but team membership is being resolved for organization "${org}".`);
+    }
+    return slug;
+}
+async function listTeamMembers(octokit, org, teamHandle, teamSlug) {
+    try {
+        const members = await octokit.paginate(octokit.rest.teams.listMembersInOrg, {
+            org,
+            team_slug: teamSlug,
+            per_page: 100,
+        });
+        return new Set(members.map((member) => member.login));
+    }
+    catch (error) {
+        const status = getHttpStatus(error);
+        if (status === 404) {
+            throw new TeamResolutionError(`Team "${teamHandle}" is unknown.`, { cause: error });
+        }
+        if (status === 403) {
+            throw new TeamResolutionError(`Team "${teamHandle}" is inaccessible with the current token.`, {
+                cause: error,
+            });
+        }
+        throw new TeamResolutionError(`Failed to resolve members of team "${teamHandle}".`, {
+            cause: error,
+        });
+    }
+}
+function getHttpStatus(error) {
+    if (typeof error === 'object' && error !== null && 'status' in error) {
+        const { status } = error;
+        return typeof status === 'number' ? status : null;
+    }
+    return null;
+}
+
+
+/***/ }),
+
 /***/ 1730:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -32013,10 +32083,10 @@ exports.evaluate = evaluate;
 exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
 const github_1 = __nccwpck_require__(3228);
-const fs_1 = __nccwpck_require__(9896);
 const config_1 = __nccwpck_require__(2973);
 const decision_1 = __nccwpck_require__(7033);
 const participants_1 = __nccwpck_require__(8317);
+const teams_1 = __nccwpck_require__(4769);
 const reporting_1 = __nccwpck_require__(9953);
 async function evaluate(input) {
     try {
@@ -32043,10 +32113,11 @@ async function evaluateOrThrow(input) {
         input.reporter.info('A configured bypass label is present; passing without evaluating participants.');
         return;
     }
-    const missingTeams = config.frozenTeams.filter((team) => !input.teamMembership.has(team));
-    if (missingTeams.length > 0) {
-        throw new Error(`Team membership resolution did not include: ${missingTeams.join(', ')}. Refusing to treat missing teams as empty.`);
-    }
+    const teamMembership = await (0, teams_1.resolveTeamMembership)({
+        octokit: input.orgOctokit,
+        org: input.repoOwner,
+        teamHandles: config.frozenTeams,
+    });
     const participants = await (0, participants_1.resolveParticipants)({
         octokit: input.octokit,
         owner: input.repoOwner,
@@ -32062,7 +32133,7 @@ async function evaluateOrThrow(input) {
         bypassLabels: config.bypassLabels,
         prLabels: input.pullRequest.labels,
         participants: participants.logins,
-        teamMembership: input.teamMembership,
+        teamMembership,
     });
     if (decision.outcome === 'pass') {
         input.reporter.info('No participant belongs to a frozen team; passing.');
@@ -32114,13 +32185,9 @@ function buildEvaluateInput(reporter) {
         repoName: github_1.context.repo.repo,
         pullRequest: extractPullRequestContext(),
         octokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('GITHUB_TOKEN')),
-        teamMembership: parseTeamMembership((0, fs_1.readFileSync)((0, reporting_1.getRequiredEnv)('TEAM_MEMBERSHIP_FILE'), 'utf8')),
+        orgOctokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('ORG_TOKEN')),
         reporter,
     };
-}
-function parseTeamMembership(raw) {
-    const parsed = JSON.parse(raw);
-    return new Map(Object.entries(parsed).map(([team, members]) => [team, new Set(members)]));
 }
 function extractPullRequestContext() {
     const pullRequest = github_1.context.payload.pull_request;

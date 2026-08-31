@@ -58,3 +58,8 @@ Because `pull_request_target` runs with privileges associated with the base repo
 The evaluator retrieves configuration (`bypass-labels`, `frozen-teams`) through the `with` inputs of the `team-freeze-guard.yml` workflow definition. It does not rely on a workspace checkout.
 
 Because `pull_request_target` always evaluates the workflow definition from the base branch, a pull request cannot change its own `frozen-teams` or `bypass-labels` by editing the workflow file on its own branch — the base-branch version is authoritative regardless of what the pull request contains.
+
+
+### No GitHub Actions cache
+
+`actions/cache` cannot be used to cache anything across runs of this action (e.g. resolved team membership), and never will be able to, as long as the trigger is `pull_request_target`. GitHub issues read-only Actions cache tokens for `pull_request`/`pull_request_target`-triggered runs ("read-only Actions cache for untrusted triggers"), so a save always fails with `cache write denied: token has no writable scopes` — regardless of the calling workflow's declared `permissions:`, of repo-level cache settings, or of how the cache action is invoked. This was tried once (team-membership caching, see `docs/Internals/implementation-plan.md`'s PR 9) and reverted after live e2e testing confirmed the write is always denied.
