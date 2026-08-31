@@ -53,6 +53,13 @@ function parseBypassLabels(raw: string): string[] {
   return result
 }
 
+export function parseFrozenTeamsInput(raw: string | undefined, repoOwner: string): string[] | ConfigError {
+  if (raw === undefined) {
+    return new ConfigError('The "frozen-teams" input is required and must be provided by the calling workflow.')
+  }
+  return parseFrozenTeams(raw, repoOwner)
+}
+
 function parseFrozenTeams(raw: string, repoOwner: string): string[] | ConfigError {
   const seen = new Set<string>()
   const result: string[] = []

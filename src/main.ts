@@ -5,7 +5,7 @@ import { decide, hasBypassLabel } from './decision'
 import type { Config } from './config'
 import type { Decision } from './decision'
 import { resolveParticipants } from './github/participants'
-import { resolveTeamMembership } from './github/teams'
+import { FROZEN_MESSAGE, buildReporter, getRequiredEnv, reportFailClosed, safeWriteSummary, type Reporter } from './reporting'
 
 type Octokit = ReturnType<typeof getOctokit>
 
@@ -15,13 +15,6 @@ export interface PullRequestContext {
   labels: string[]
 }
 
-export interface Reporter {
-  info(message: string): void
-  warning(message: string): void
-  setFailed(message: string): void
-  writeSummary(markdown: string): Promise<void>
-}
-
 export interface EvaluateInput {
   bypassLabelsInput: string | undefined
   frozenTeamsInput: string | undefined
@@ -29,51 +22,17 @@ export interface EvaluateInput {
   repoName: string
   pullRequest: PullRequestContext | undefined
   octokit: Octokit
-  // A thunk, not an already-built client: constructing the org-scoped client
-  // requires the Octo STS-issued ORG_TOKEN, which is itself an external call.
-  // Deferring construction until team membership is actually resolved means
-  // that call is skipped whenever evaluation short-circuits before reaching it
-  // (no pull request context, or a bypass label present).
-  orgOctokit: () => Octokit
+  // Resolved by the "Resolve frozen team membership" step and passed in via
+  // its step output; this entrypoint never talks to the org-scoped API itself.
+  teamMembership: Map<string, Set<string>>
   reporter: Reporter
 }
-
-const FROZEN_MESSAGE = 'Your team is frozen'
-
-const FAIL_CLOSED_SUMMARY =
-  'The team freeze policy could not be evaluated safely, so this check fails closed rather than ' +
-  'silently permitting a merge that might belong to a frozen team. See the workflow run logs for details.'
 
 export async function evaluate(input: EvaluateInput): Promise<void> {
   try {
     await evaluateOrThrow(input)
   } catch (error) {
     await reportFailClosed(input.reporter, error)
-  }
-}
-
-async function reportFailClosed(reporter: Reporter, error: unknown): Promise<void> {
-  reporter.warning(formatError(error))
-  await safeWriteSummary(reporter, FAIL_CLOSED_SUMMARY)
-  reporter.setFailed(FROZEN_MESSAGE)
-}
-
-async function safeWriteSummary(reporter: Reporter, markdown: string): Promise<void> {
-  try {
-    await reporter.writeSummary(markdown)
-  } catch (error) {
-    reporter.warning(`Failed to write the job summary: ${formatError(error)}`)
-  }
-}
-
-function formatError(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message
-  }
-  try {
-    return JSON.stringify(error)
-  } catch {
-    return String(error)
   }
 }
 
@@ -98,6 +57,13 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     return
   }
 
+  const missingTeams = config.frozenTeams.filter((team) => !input.teamMembership.has(team))
+  if (missingTeams.length > 0) {
+    throw new Error(
+      `Team membership resolution did not include: ${missingTeams.join(', ')}. Refusing to treat missing teams as empty.`,
+    )
+  }
+
   const participants = await resolveParticipants({
     octokit: input.octokit,
     owner: input.repoOwner,
@@ -112,18 +78,12 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     )
   }
 
-  const teamMembership = await resolveTeamMembership({
-    octokit: input.orgOctokit(),
-    org: input.repoOwner,
-    teamHandles: config.frozenTeams,
-  })
-
   const decision = decide({
     frozenTeams: config.frozenTeams,
     bypassLabels: config.bypassLabels,
     prLabels: input.pullRequest.labels,
     participants: participants.logins,
-    teamMembership,
+    teamMembership: input.teamMembership,
   })
 
   if (decision.outcome === 'pass') {
@@ -182,20 +142,14 @@ function buildEvaluateInput(reporter: Reporter): EvaluateInput {
     repoName: context.repo.repo,
     pullRequest: extractPullRequestContext(),
     octokit: getOctokit(getRequiredEnv('GITHUB_TOKEN')),
-    orgOctokit: () => getOctokit(getRequiredEnv('ORG_TOKEN')),
+    teamMembership: parseTeamMembership(getRequiredEnv('TEAM_MEMBERSHIP')),
     reporter,
   }
 }
 
-function buildReporter(): Reporter {
-  return {
-    info: core.info,
-    warning: core.warning,
-    setFailed: core.setFailed,
-    writeSummary: async (markdown) => {
-      await core.summary.addRaw(markdown, true).write()
-    },
-  }
+function parseTeamMembership(raw: string): Map<string, Set<string>> {
+  const parsed = JSON.parse(raw) as Record<string, string[]>
+  return new Map(Object.entries(parsed).map(([team, members]) => [team, new Set(members)]))
 }
 
 function extractPullRequestContext(): PullRequestContext | undefined {
@@ -214,14 +168,6 @@ function extractPullRequestContext(): PullRequestContext | undefined {
       .map((label) => label.name)
       .filter((name): name is string => typeof name === 'string'),
   }
-}
-
-function getRequiredEnv(name: string): string {
-  const value = process.env[name]
-  if (!value) {
-    throw new Error(`Missing required environment variable "${name}".`)
-  }
-  return value
 }
 
 if (require.main === module) {

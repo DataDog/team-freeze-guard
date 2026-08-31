@@ -31895,247 +31895,71 @@ function parseFrozenTeams(raw, repoOwner) {
 
 /***/ }),
 
-/***/ 7033:
+/***/ 4769:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
 
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.hasBypassLabel = hasBypassLabel;
-exports.decide = decide;
-function hasBypassLabel(bypassLabels, prLabels) {
-    const labels = new Set(prLabels);
-    return bypassLabels.some((label) => labels.has(label));
-}
-function decide(input) {
-    if (hasBypassLabel(input.bypassLabels, input.prLabels)) {
-        return { outcome: 'pass', matchedTeams: [] };
-    }
-    const participants = new Set(input.participants);
-    const matchedTeams = input.frozenTeams.filter((team) => {
-        const members = input.teamMembership.get(team);
-        if (!members) {
-            return false;
-        }
-        for (const participant of participants) {
-            if (members.has(participant)) {
-                return true;
-            }
-        }
-        return false;
-    });
-    if (matchedTeams.length === 0) {
-        return { outcome: 'pass', matchedTeams: [] };
-    }
-    return { outcome: 'fail', matchedTeams };
-}
-
-
-/***/ }),
-
-/***/ 8317:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.resolveParticipants = resolveParticipants;
-async function resolveParticipants(input) {
-    const logins = new Set([input.prAuthorLogin]);
-    const unmappedIdentities = new Set();
-    const { data: commit } = await input.octokit.rest.repos.getCommit({
-        owner: input.owner,
-        repo: input.repo,
-        ref: input.headSha,
-    });
-    recordIdentity(commit.committer?.login ?? null, formatUnmappedIdentity(commit.commit.committer?.name, commit.commit.committer?.email), logins, unmappedIdentities);
-    return { logins: [...logins], unmappedIdentities: [...unmappedIdentities] };
-}
-function formatUnmappedIdentity(name, email) {
-    if (!name) {
-        return null;
-    }
-    return email ? `${name} <${email}>` : name;
-}
-function recordIdentity(login, unmappedIdentity, logins, unmappedIdentities) {
-    if (login) {
-        logins.add(login);
-        return;
-    }
-    if (unmappedIdentity) {
-        unmappedIdentities.add(unmappedIdentity);
+exports.TeamResolutionError = void 0;
+exports.resolveTeamMembership = resolveTeamMembership;
+class TeamResolutionError extends Error {
+    constructor(message, options) {
+        super(message, options);
+        this.name = 'TeamResolutionError';
     }
 }
-
-
-/***/ }),
-
-/***/ 1730:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
+exports.TeamResolutionError = TeamResolutionError;
+const TEAM_HANDLE_PATTERN = /^@([^/]+)\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/;
+async function resolveTeamMembership(input) {
+    const membership = new Map();
+    for (const teamHandle of input.teamHandles) {
+        const teamSlug = extractTeamSlug(teamHandle, input.org);
+        membership.set(teamHandle, await listTeamMembers(input.octokit, input.org, teamHandle, teamSlug));
     }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.evaluate = evaluate;
-exports.run = run;
-const core = __importStar(__nccwpck_require__(7484));
-const github_1 = __nccwpck_require__(3228);
-const config_1 = __nccwpck_require__(2973);
-const decision_1 = __nccwpck_require__(7033);
-const participants_1 = __nccwpck_require__(8317);
-const reporting_1 = __nccwpck_require__(9953);
-async function evaluate(input) {
+    return membership;
+}
+function extractTeamSlug(teamHandle, org) {
+    const match = TEAM_HANDLE_PATTERN.exec(teamHandle);
+    if (!match) {
+        throw new TeamResolutionError(`"${teamHandle}" is not a valid "@org/team-slug" handle.`);
+    }
+    const [, handleOrg, slug] = match;
+    if (handleOrg !== org) {
+        throw new TeamResolutionError(`"${teamHandle}" belongs to organization "${handleOrg}", but team membership is being resolved for organization "${org}".`);
+    }
+    return slug;
+}
+async function listTeamMembers(octokit, org, teamHandle, teamSlug) {
     try {
-        await evaluateOrThrow(input);
+        const members = await octokit.paginate(octokit.rest.teams.listMembersInOrg, {
+            org,
+            team_slug: teamSlug,
+            per_page: 100,
+        });
+        return new Set(members.map((member) => member.login));
     }
     catch (error) {
-        await (0, reporting_1.reportFailClosed)(input.reporter, error);
+        const status = getHttpStatus(error);
+        if (status === 404) {
+            throw new TeamResolutionError(`Team "${teamHandle}" is unknown.`, { cause: error });
+        }
+        if (status === 403) {
+            throw new TeamResolutionError(`Team "${teamHandle}" is inaccessible with the current token.`, {
+                cause: error,
+            });
+        }
+        throw new TeamResolutionError(`Failed to resolve members of team "${teamHandle}".`, {
+            cause: error,
+        });
     }
 }
-async function evaluateOrThrow(input) {
-    const config = (0, config_1.parseConfig)({
-        bypassLabels: input.bypassLabelsInput,
-        frozenTeams: input.frozenTeamsInput,
-        repoOwner: input.repoOwner,
-    });
-    if (config instanceof config_1.ConfigError) {
-        input.reporter.setFailed(config.message);
-        return;
+function getHttpStatus(error) {
+    if (typeof error === 'object' && error !== null && 'status' in error) {
+        const { status } = error;
+        return typeof status === 'number' ? status : null;
     }
-    if (!input.pullRequest) {
-        throw new Error('This event does not carry a pull request context.');
-    }
-    if ((0, decision_1.hasBypassLabel)(config.bypassLabels, input.pullRequest.labels)) {
-        input.reporter.info('A configured bypass label is present; passing without evaluating participants.');
-        return;
-    }
-    const missingTeams = config.frozenTeams.filter((team) => !input.teamMembership.has(team));
-    if (missingTeams.length > 0) {
-        throw new Error(`Team membership resolution did not include: ${missingTeams.join(', ')}. Refusing to treat missing teams as empty.`);
-    }
-    const participants = await (0, participants_1.resolveParticipants)({
-        octokit: input.octokit,
-        owner: input.repoOwner,
-        repo: input.repoName,
-        headSha: input.pullRequest.headSha,
-        prAuthorLogin: input.pullRequest.authorLogin,
-    });
-    for (const identity of participants.unmappedIdentities) {
-        input.reporter.warning(`Could not map commit identity "${identity}" to a GitHub account; it was not checked against frozen teams.`);
-    }
-    const decision = (0, decision_1.decide)({
-        frozenTeams: config.frozenTeams,
-        bypassLabels: config.bypassLabels,
-        prLabels: input.pullRequest.labels,
-        participants: participants.logins,
-        teamMembership: input.teamMembership,
-    });
-    if (decision.outcome === 'pass') {
-        input.reporter.info('No participant belongs to a frozen team; passing.');
-        return;
-    }
-    await reportFailure(decision, config, input.reporter);
-}
-async function reportFailure(decision, config, reporter) {
-    await (0, reporting_1.safeWriteSummary)(reporter, buildFailureSummary(decision, config));
-    reporter.setFailed(reporting_1.FROZEN_MESSAGE);
-}
-function buildFailureSummary(decision, config) {
-    const teams = decision.matchedTeams.join(', ');
-    const lines = [
-        'Your team is frozen.',
-        '',
-        `At least one pull request participant belongs to ${teams}.`,
-    ];
-    if (config.bypassLabels.length > 0) {
-        const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ');
-        lines.push(`Add one of the following labels before merging this pull request: ${labels}.`);
-    }
-    else {
-        lines.push('No bypass labels are configured for this repository; contact an administrator to proceed.');
-    }
-    return lines.join('\n');
-}
-function run() {
-    const reporter = (0, reporting_1.buildReporter)();
-    runWithReporter(reporter).catch(() => {
-        // reportFailClosed handles reporting internally and does not itself throw
-        // under normal operation; this is a last-resort backstop.
-        core.setFailed(reporting_1.FROZEN_MESSAGE);
-    });
-}
-async function runWithReporter(reporter) {
-    try {
-        await evaluate(buildEvaluateInput(reporter));
-    }
-    catch (error) {
-        await (0, reporting_1.reportFailClosed)(reporter, error);
-    }
-}
-function buildEvaluateInput(reporter) {
-    return {
-        bypassLabelsInput: core.getInput('bypass-labels'),
-        frozenTeamsInput: core.getInput('frozen-teams'),
-        repoOwner: github_1.context.repo.owner,
-        repoName: github_1.context.repo.repo,
-        pullRequest: extractPullRequestContext(),
-        octokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('GITHUB_TOKEN')),
-        teamMembership: parseTeamMembership((0, reporting_1.getRequiredEnv)('TEAM_MEMBERSHIP')),
-        reporter,
-    };
-}
-function parseTeamMembership(raw) {
-    const parsed = JSON.parse(raw);
-    return new Map(Object.entries(parsed).map(([team, members]) => [team, new Set(members)]));
-}
-function extractPullRequestContext() {
-    const pullRequest = github_1.context.payload.pull_request;
-    if (!pullRequest?.user?.login || !pullRequest.head?.sha) {
-        return undefined;
-    }
-    return {
-        authorLogin: pullRequest.user.login,
-        headSha: pullRequest.head.sha,
-        labels: (pullRequest.labels ?? [])
-            .map((label) => label.name)
-            .filter((name) => typeof name === 'string'),
-    };
-}
-if (require.main === require.cache[eval('__filename')]) {
-    run();
+    return null;
 }
 
 
@@ -32230,6 +32054,109 @@ function getRequiredEnv(name) {
         throw new Error(`Missing required environment variable "${name}".`);
     }
     return value;
+}
+
+
+/***/ }),
+
+/***/ 8882:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.resolveAndOutputTeamMembership = resolveAndOutputTeamMembership;
+exports.run = run;
+const core = __importStar(__nccwpck_require__(7484));
+const github_1 = __nccwpck_require__(3228);
+const config_1 = __nccwpck_require__(2973);
+const teams_1 = __nccwpck_require__(4769);
+const reporting_1 = __nccwpck_require__(9953);
+async function resolveAndOutputTeamMembership(input) {
+    try {
+        await resolveOrThrow(input);
+    }
+    catch (error) {
+        await (0, reporting_1.reportFailClosed)(input.reporter, error);
+    }
+}
+async function resolveOrThrow(input) {
+    const frozenTeams = (0, config_1.parseFrozenTeamsInput)(input.frozenTeamsInput, input.repoOwner);
+    if (frozenTeams instanceof config_1.ConfigError) {
+        input.reporter.setFailed(frozenTeams.message);
+        return;
+    }
+    const membership = await (0, teams_1.resolveTeamMembership)({
+        octokit: input.octokit,
+        org: input.repoOwner,
+        teamHandles: frozenTeams,
+    });
+    input.setOutput('team-membership', serializeMembership(membership));
+}
+function serializeMembership(membership) {
+    const asRecord = Object.fromEntries([...membership].map(([team, members]) => [team, [...members]]));
+    return JSON.stringify(asRecord);
+}
+function run() {
+    const reporter = (0, reporting_1.buildReporter)();
+    runWithReporter(reporter).catch(() => {
+        // reportFailClosed handles reporting internally and does not itself throw
+        // under normal operation; this is a last-resort backstop.
+        core.setFailed(reporting_1.FROZEN_MESSAGE);
+    });
+}
+async function runWithReporter(reporter) {
+    try {
+        await resolveAndOutputTeamMembership(buildInput(reporter));
+    }
+    catch (error) {
+        await (0, reporting_1.reportFailClosed)(reporter, error);
+    }
+}
+function buildInput(reporter) {
+    return {
+        frozenTeamsInput: core.getInput('frozen-teams'),
+        repoOwner: github_1.context.repo.owner,
+        octokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('ORG_TOKEN')),
+        reporter,
+        setOutput: core.setOutput,
+    };
+}
+if (require.main === require.cache[eval('__filename')]) {
+    run();
 }
 
 
@@ -37338,7 +37265,7 @@ legacyRestEndpointMethods.VERSION = VERSION;
 /******/ 	// startup
 /******/ 	// Load entry module and return exports
 /******/ 	// This entry module is referenced by other modules so it can't be inlined
-/******/ 	var __webpack_exports__ = __nccwpck_require__(1730);
+/******/ 	var __webpack_exports__ = __nccwpck_require__(8882);
 /******/ 	module.exports = __webpack_exports__;
 /******/ 	
 /******/ })()
