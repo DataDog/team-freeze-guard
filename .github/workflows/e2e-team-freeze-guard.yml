@@ -23,7 +23,7 @@ on:
 permissions:
   id-token: write
   contents: read
-  pull-requests: read
+  actions: write # required by actions/cache to write the team-membership cache
 
 jobs:
   team-freeze-guard-e2e:
