@@ -1,8 +1,6 @@
 name: Team freeze guard (e2e)
 
-# Dogfood check, run manually against a single scratch PR branch rather than
-# on every PR here (branch filters on this trigger only match the PR's base
-# branch, not its head, hence the job-level `if:` below).
+# Dogfood check, run manually against a PR branch `e2e-tests`
 #
 # 1. no frozen team -> PASS
 # 2. a random frozen team -> PASS
@@ -31,7 +29,7 @@ jobs:
   team-freeze-guard-e2e:
     name: Team freeze guard (e2e)
     runs-on: ubuntu-latest
-    if: github.head_ref == 'cbeauchesne/e2e-tests'
+    if: github.head_ref == 'e2e-tests'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
