@@ -23,8 +23,8 @@ export interface EvaluateInput {
   repoName: string
   pullRequest: PullRequestContext | undefined
   octokit: Octokit
-  // Resolved by the "Resolve frozen team membership" step (or restored from cache)
-  // and read from its output file; this entrypoint never talks to the org-scoped API itself.
+  // Resolved by the "Resolve frozen team membership" step and read from its output
+  // file; this entrypoint never talks to the org-scoped API itself.
   teamMembership: Map<string, Set<string>>
   reporter: Reporter
 }

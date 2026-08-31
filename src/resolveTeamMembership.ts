@@ -12,8 +12,8 @@ export interface ResolveTeamMembershipStepInput {
   repoOwner: string
   octokit: Octokit
   reporter: Reporter
-  // Writes the resolved membership so it lands at the path the composite action
-  // caches with actions/cache, rather than as a step output.
+  // Writes the resolved membership to a file rather than a step output, so
+  // "Evaluate team freeze policy" can read it in a later composite-action step.
   writeMembershipFile: (serializedMembership: string) => void
 }
 
