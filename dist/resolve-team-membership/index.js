@@ -32132,11 +32132,19 @@ function serializeMembership(membership) {
 }
 function run() {
     const reporter = (0, reporting_1.buildReporter)();
-    resolveAndOutputTeamMembership(buildInput(reporter)).catch(() => {
+    runWithReporter(reporter).catch(() => {
         // reportFailClosed handles reporting internally and does not itself throw
         // under normal operation; this is a last-resort backstop.
         core.setFailed(reporting_1.FROZEN_MESSAGE);
     });
+}
+async function runWithReporter(reporter) {
+    try {
+        await resolveAndOutputTeamMembership(buildInput(reporter));
+    }
+    catch (error) {
+        await (0, reporting_1.reportFailClosed)(reporter, error);
+    }
 }
 function buildInput(reporter) {
     return {

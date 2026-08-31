@@ -46,11 +46,19 @@ function serializeMembership(membership: Map<string, Set<string>>): string {
 
 export function run(): void {
   const reporter = buildReporter()
-  resolveAndOutputTeamMembership(buildInput(reporter)).catch(() => {
+  runWithReporter(reporter).catch(() => {
     // reportFailClosed handles reporting internally and does not itself throw
     // under normal operation; this is a last-resort backstop.
     core.setFailed(FROZEN_MESSAGE)
   })
+}
+
+async function runWithReporter(reporter: Reporter): Promise<void> {
+  try {
+    await resolveAndOutputTeamMembership(buildInput(reporter))
+  } catch (error) {
+    await reportFailClosed(reporter, error)
+  }
 }
 
 function buildInput(reporter: Reporter): ResolveTeamMembershipStepInput {

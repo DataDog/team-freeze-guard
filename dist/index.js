@@ -32042,6 +32042,10 @@ async function evaluateOrThrow(input) {
         input.reporter.info('A configured bypass label is present; passing without evaluating participants.');
         return;
     }
+    const missingTeams = config.frozenTeams.filter((team) => !input.teamMembership.has(team));
+    if (missingTeams.length > 0) {
+        throw new Error(`Team membership resolution did not include: ${missingTeams.join(', ')}. Refusing to treat missing teams as empty.`);
+    }
     const participants = await (0, participants_1.resolveParticipants)({
         octokit: input.octokit,
         owner: input.repoOwner,

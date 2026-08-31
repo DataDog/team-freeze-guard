@@ -57,6 +57,13 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     return
   }
 
+  const missingTeams = config.frozenTeams.filter((team) => !input.teamMembership.has(team))
+  if (missingTeams.length > 0) {
+    throw new Error(
+      `Team membership resolution did not include: ${missingTeams.join(', ')}. Refusing to treat missing teams as empty.`,
+    )
+  }
+
   const participants = await resolveParticipants({
     octokit: input.octokit,
     owner: input.repoOwner,

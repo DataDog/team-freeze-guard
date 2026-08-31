@@ -148,6 +148,15 @@ describe('evaluate', () => {
     ])
   })
 
+  it('fails closed instead of treating a frozen team missing from teamMembership as empty', async () => {
+    const reporter = fakeReporter()
+    // The resolved membership map has no entry for the sole configured frozen team.
+    await evaluate(baseInput({ teamMembership: new Map(), reporter }))
+
+    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.summaries[0]).toContain('could not be evaluated safely')
+  })
+
   it('fails closed when participant resolution throws', async () => {
     const reporter = fakeReporter()
     const octokit = {
