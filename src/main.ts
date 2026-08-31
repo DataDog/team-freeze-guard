@@ -1,5 +1,6 @@
 import * as core from '@actions/core'
 import { context, getOctokit } from '@actions/github'
+import { readFileSync } from 'fs'
 import { ConfigError, parseConfig } from './config'
 import { decide, hasBypassLabel } from './decision'
 import type { Config } from './config'
@@ -22,8 +23,8 @@ export interface EvaluateInput {
   repoName: string
   pullRequest: PullRequestContext | undefined
   octokit: Octokit
-  // Resolved by the "Resolve frozen team membership" step and passed in via
-  // its step output; this entrypoint never talks to the org-scoped API itself.
+  // Resolved by the "Resolve frozen team membership" step (or restored from cache)
+  // and read from its output file; this entrypoint never talks to the org-scoped API itself.
   teamMembership: Map<string, Set<string>>
   reporter: Reporter
 }
@@ -142,7 +143,7 @@ function buildEvaluateInput(reporter: Reporter): EvaluateInput {
     repoName: context.repo.repo,
     pullRequest: extractPullRequestContext(),
     octokit: getOctokit(getRequiredEnv('GITHUB_TOKEN')),
-    teamMembership: parseTeamMembership(getRequiredEnv('TEAM_MEMBERSHIP')),
+    teamMembership: parseTeamMembership(readFileSync(getRequiredEnv('TEAM_MEMBERSHIP_FILE'), 'utf8')),
     reporter,
   }
 }

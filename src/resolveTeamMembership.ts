@@ -1,5 +1,6 @@
 import * as core from '@actions/core'
 import { context, getOctokit } from '@actions/github'
+import { writeFileSync } from 'fs'
 import { ConfigError, parseFrozenTeamsInput } from './config'
 import { resolveTeamMembership } from './github/teams'
 import { FROZEN_MESSAGE, buildReporter, getRequiredEnv, reportFailClosed, type Reporter } from './reporting'
@@ -11,7 +12,9 @@ export interface ResolveTeamMembershipStepInput {
   repoOwner: string
   octokit: Octokit
   reporter: Reporter
-  setOutput: (name: string, value: string) => void
+  // Writes the resolved membership so it lands at the path the composite action
+  // caches with actions/cache, rather than as a step output.
+  writeMembershipFile: (serializedMembership: string) => void
 }
 
 export async function resolveAndOutputTeamMembership(input: ResolveTeamMembershipStepInput): Promise<void> {
@@ -36,7 +39,7 @@ async function resolveOrThrow(input: ResolveTeamMembershipStepInput): Promise<vo
     teamHandles: frozenTeams,
   })
 
-  input.setOutput('team-membership', serializeMembership(membership))
+  input.writeMembershipFile(serializeMembership(membership))
 }
 
 function serializeMembership(membership: Map<string, Set<string>>): string {
@@ -62,12 +65,13 @@ async function runWithReporter(reporter: Reporter): Promise<void> {
 }
 
 function buildInput(reporter: Reporter): ResolveTeamMembershipStepInput {
+  const membershipFilePath = getRequiredEnv('TEAM_MEMBERSHIP_FILE')
   return {
     frozenTeamsInput: core.getInput('frozen-teams'),
     repoOwner: context.repo.owner,
     octokit: getOctokit(getRequiredEnv('ORG_TOKEN')),
     reporter,
-    setOutput: core.setOutput,
+    writeMembershipFile: (serialized) => writeFileSync(membershipFilePath, serialized),
   }
 }
 

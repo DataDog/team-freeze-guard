@@ -32013,6 +32013,7 @@ exports.evaluate = evaluate;
 exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
 const github_1 = __nccwpck_require__(3228);
+const fs_1 = __nccwpck_require__(9896);
 const config_1 = __nccwpck_require__(2973);
 const decision_1 = __nccwpck_require__(7033);
 const participants_1 = __nccwpck_require__(8317);
@@ -32113,7 +32114,7 @@ function buildEvaluateInput(reporter) {
         repoName: github_1.context.repo.repo,
         pullRequest: extractPullRequestContext(),
         octokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('GITHUB_TOKEN')),
-        teamMembership: parseTeamMembership((0, reporting_1.getRequiredEnv)('TEAM_MEMBERSHIP')),
+        teamMembership: parseTeamMembership((0, fs_1.readFileSync)((0, reporting_1.getRequiredEnv)('TEAM_MEMBERSHIP_FILE'), 'utf8')),
         reporter,
     };
 }
