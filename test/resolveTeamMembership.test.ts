@@ -45,7 +45,7 @@ function baseInput(overrides: Partial<ResolveTeamMembershipStepInput> = {}): Res
     repoOwner: 'org',
     octokit: fakeOctokit({ 'team-a': [] }),
     reporter: fakeReporter(),
-    setOutput: vi.fn(),
+    writeMembershipFile: vi.fn(),
     ...overrides,
   }
 }
@@ -69,18 +69,17 @@ describe('resolveAndOutputTeamMembership', () => {
     ])
   })
 
-  it('sets the team-membership output as JSON keyed by the "@org/team-slug" handle', async () => {
-    const setOutput = vi.fn()
+  it('writes the resolved membership as JSON keyed by the "@org/team-slug" handle', async () => {
+    const writeMembershipFile = vi.fn()
     await resolveAndOutputTeamMembership(
       baseInput({
         frozenTeamsInput: '@org/team-a\n@org/team-b',
         octokit: fakeOctokit({ 'team-a': [{ login: 'alice' }, { login: 'bob' }], 'team-b': [{ login: 'carol' }] }),
-        setOutput,
+        writeMembershipFile,
       }),
     )
 
-    expect(setOutput).toHaveBeenCalledWith(
-      'team-membership',
+    expect(writeMembershipFile).toHaveBeenCalledWith(
       JSON.stringify({ '@org/team-a': ['alice', 'bob'], '@org/team-b': ['carol'] }),
     )
   })
@@ -104,10 +103,10 @@ describe('resolveAndOutputTeamMembership', () => {
     expect(reporter.summaries[0]).toContain('could not be evaluated safely')
   })
 
-  it('does not set an output when config is malformed', async () => {
-    const setOutput = vi.fn()
-    await resolveAndOutputTeamMembership(baseInput({ frozenTeamsInput: 'not-a-valid-handle', setOutput }))
+  it('does not write a membership file when config is malformed', async () => {
+    const writeMembershipFile = vi.fn()
+    await resolveAndOutputTeamMembership(baseInput({ frozenTeamsInput: 'not-a-valid-handle', writeMembershipFile }))
 
-    expect(setOutput).not.toHaveBeenCalled()
+    expect(writeMembershipFile).not.toHaveBeenCalled()
   })
 })

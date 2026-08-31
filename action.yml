@@ -31,25 +31,47 @@ runs:
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
             f.write(f"skip={'true' if frozen_teams_empty else 'false'}\n")
 
+    # One entry per frozen team, refreshed at most once an hour (see the cache key below)
+    # so most runs skip both the OIDC exchange and the team-membership API calls entirely.
+    - name: Compute team-membership cache key
+      id: cache-key
+      if: steps.early-checks.outputs.skip != 'true'
+      shell: bash
+      run: |
+        hour_bucket="$(date -u +%Y%m%d%H)"
+        input_hash="$(printf '%s' "$FROZEN_TEAMS" | sha256sum | cut -d' ' -f1)"
+        echo "key=team-freeze-guard-membership-${hour_bucket}-${input_hash}" >> "$GITHUB_OUTPUT"
+      env:
+        FROZEN_TEAMS: ${{ inputs.frozen-teams }}
+
+    - name: Restore cached frozen team membership
+      id: membership-cache
+      if: steps.early-checks.outputs.skip != 'true'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/team-freeze-guard-membership.json
+        key: ${{ steps.cache-key.outputs.key }}
+
     # Trust policy: DataDog/.github/.github/chainguard/team-freeze-guard.read-org-members.sts.yaml
     # (see docs/Internals/octo-sts.md). The org scope and policy are intentionally
     # not exposed as repository inputs (see README's "Required workflow permissions"
     # section), so this is hardcoded here rather than configurable per caller.
     - name: Exchange OIDC identity for an org-scoped GitHub token
       id: octo-sts
-      if: steps.early-checks.outputs.skip != 'true'
+      if: steps.early-checks.outputs.skip != 'true' && steps.membership-cache.outputs.cache-hit != 'true'
       uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
       with:
         scope: DataDog
         policy: team-freeze-guard.read-org-members
 
     # Split out from "Evaluate team freeze policy" so its result (one API call per frozen
-    # team) can be cached across pipeline runs in a follow-up PR, without also caching the
-    # participant-vs-membership decision below. Only loads members of the configured
-    # frozen-teams; it has no notion of bypass labels.
+    # team) can be cached across pipeline runs, without also caching the participant-vs-membership
+    # decision below. Only loads members of the configured frozen-teams; it has no notion of
+    # bypass labels. Skipped entirely on a cache hit. Writes to the path cached above rather than
+    # a step output, so the cached file and a freshly resolved one are read identically below.
     - name: Resolve frozen team membership
       id: resolve-team-membership
-      if: steps.early-checks.outputs.skip != 'true'
+      if: steps.early-checks.outputs.skip != 'true' && steps.membership-cache.outputs.cache-hit != 'true'
       shell: bash
       run: node "${{ github.action_path }}/dist/resolve-team-membership/index.js"
       env:
@@ -58,6 +80,7 @@ runs:
         # uppercasing an input name to its INPUT_ env var, so this must keep
         # the dash rather than using an underscore.
         INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
+        TEAM_MEMBERSHIP_FILE: ${{ runner.temp }}/team-freeze-guard-membership.json
 
     - name: Evaluate team freeze policy
       if: steps.early-checks.outputs.skip != 'true'
@@ -65,6 +88,6 @@ runs:
       run: node "${{ github.action_path }}/dist/index.js"
       env:
         GITHUB_TOKEN: ${{ github.token }}
-        TEAM_MEMBERSHIP: ${{ steps.resolve-team-membership.outputs.team-membership }}
+        TEAM_MEMBERSHIP_FILE: ${{ runner.temp }}/team-freeze-guard-membership.json
         INPUT_BYPASS-LABELS: ${{ inputs.bypass-labels }}
         INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}

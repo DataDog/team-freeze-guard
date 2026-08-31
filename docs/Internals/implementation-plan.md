@@ -156,7 +156,24 @@ Prep work for a follow-up PR that will cache frozen-team membership in the GitHu
 - Shared reporting/fail-closed helpers (`Reporter`, `buildReporter`, `reportFailClosed`, `safeWriteSummary`, `formatError`, `getRequiredEnv`, `FROZEN_MESSAGE`, `FAIL_CLOSED_SUMMARY`) extracted into `src/reporting.ts` so both entrypoints share one implementation rather than diverging.
 - `action.yml` gains a "Resolve frozen team membership" step between the Octo STS exchange and "Evaluate team freeze policy", running a second bundle at `dist/resolve-team-membership/index.js`. `package.json`'s `build` script now runs `ncc` twice (`dist/` and `dist/resolve-team-membership/`).
 
-**Status: implemented, not yet reviewed.** Deviations from the plan:
+**Status: implemented and reviewed (merged as GitHub PR #12).** Deviations from the plan:
 - The new step still runs (and pays for) the per-team API calls even when a bypass label is already present on the PR — this matches, rather than optimizes, today's `action.yml`-level behavior (the Octo STS exchange itself is already unconditional on the bypass label; only `evaluate()`'s in-process short-circuit currently skips the team-API calls). An earlier version of this PR moved that skip up into the early-checks step, but the bypass/label logic is intentionally kept in exactly one place (`decide()`/`hasBypassLabel()` in `src/decision.ts`) ahead of an upcoming PR that adds a second, independent bypass condition (a team approval) alongside it.
-- No caching is added in this PR, per the request — the new step still calls the GitHub API on every run. That's the next PR.
+- No caching is added in this PR, per the request — the new step still calls the GitHub API on every run. That's PR 9.
 - Verified locally: `npm run lint`, `npm run typecheck`, `npm test` (56 tests passing), and `npm run build` (no `dist/` diff) all pass.
+- Review also caught: a synchronous throw in `resolveTeamMembership.ts`'s input construction (e.g. a missing `ORG_TOKEN`) could bypass the fail-closed reporting path, and `evaluate()` didn't validate that the resolved `teamMembership` map actually covered every configured frozen team. Both fixed before merge (see PR 9's note on the latter — it's what motivated the file-based membership handoff).
+
+## PR 9 — Cache resolved team membership across pipeline runs
+
+Caches the "Resolve frozen team membership" step's result (one API call per frozen team) in the GitHub Actions cache, so most runs skip both the Octo STS OIDC exchange and the team-membership API calls entirely.
+
+- `action.yml` gains two new steps between "Exchange OIDC identity" and "Resolve frozen team membership":
+  - "Compute team-membership cache key": a cache key of `team-freeze-guard-membership-<hour-bucket>-<sha256(frozen-teams)>`, where `<hour-bucket>` is `date -u +%Y%m%d%H` — the key changes every hour, so the cache can never serve membership data older than one hour, and the input hash means a config change gets fresh data immediately rather than waiting out the hour.
+  - "Restore cached frozen team membership": `actions/cache@v6.1.0`, keyed as above, caching a single JSON file at `${{ runner.temp }}/team-freeze-guard-membership.json`. `actions/cache` auto-saves the path after the job on a miss and no-ops on an exact hit, so no separate save step is needed.
+  - "Exchange OIDC identity" and "Resolve frozen team membership" both gain `&& steps.cache.outputs.cache-hit != 'true'` on their `if:`, so a cache hit skips both — no OIDC exchange, no GitHub API calls.
+- `src/resolveTeamMembership.ts`: `ResolveTeamMembershipStepInput.setOutput` (a `core.setOutput` call) is replaced by `writeMembershipFile` (a plain `fs.writeFileSync` call to the path in the new `TEAM_MEMBERSHIP_FILE` env var) — the resolved membership now has to land at the exact path `actions/cache` caches, so a step output can no longer be the transport.
+- `src/main.ts`: reads the same file directly (`readFileSync(getRequiredEnv('TEAM_MEMBERSHIP_FILE'), 'utf8')`) instead of a `TEAM_MEMBERSHIP` step-output env var — this works identically whether the file came from a fresh resolve or a cache restore, so "Evaluate team freeze policy" needs no `if:` condition on the cache outcome and no separate "load from cache" step.
+- Team-membership caches are scoped to the calling repository by the GitHub Actions cache service itself (not by anything in this key), so no explicit repo/org component was added to the key.
+
+**Status: implemented, not yet reviewed.** Deviations from the plan:
+- None — matches the request (restore, skip the OIDC exchange + resolution on a hit, hour-bucketed + input-hashed key).
+- Verified locally: `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` (no `dist/` diff) all pass. Not yet verified end-to-end in a real workflow run (cache hit/miss timing needs a live Actions run, not just unit tests).

@@ -32102,6 +32102,7 @@ exports.resolveAndOutputTeamMembership = resolveAndOutputTeamMembership;
 exports.run = run;
 const core = __importStar(__nccwpck_require__(7484));
 const github_1 = __nccwpck_require__(3228);
+const fs_1 = __nccwpck_require__(9896);
 const config_1 = __nccwpck_require__(2973);
 const teams_1 = __nccwpck_require__(4769);
 const reporting_1 = __nccwpck_require__(9953);
@@ -32124,7 +32125,7 @@ async function resolveOrThrow(input) {
         org: input.repoOwner,
         teamHandles: frozenTeams,
     });
-    input.setOutput('team-membership', serializeMembership(membership));
+    input.writeMembershipFile(serializeMembership(membership));
 }
 function serializeMembership(membership) {
     const asRecord = Object.fromEntries([...membership].map(([team, members]) => [team, [...members]]));
@@ -32147,12 +32148,13 @@ async function runWithReporter(reporter) {
     }
 }
 function buildInput(reporter) {
+    const membershipFilePath = (0, reporting_1.getRequiredEnv)('TEAM_MEMBERSHIP_FILE');
     return {
         frozenTeamsInput: core.getInput('frozen-teams'),
         repoOwner: github_1.context.repo.owner,
         octokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('ORG_TOKEN')),
         reporter,
-        setOutput: core.setOutput,
+        writeMembershipFile: (serialized) => (0, fs_1.writeFileSync)(membershipFilePath, serialized),
     };
 }
 if (require.main === require.cache[eval('__filename')]) {
