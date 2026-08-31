@@ -1,11 +1,11 @@
 import * as core from '@actions/core'
 import { context, getOctokit } from '@actions/github'
-import { readFileSync } from 'fs'
 import { ConfigError, parseConfig } from './config'
 import { decide, hasBypassLabel } from './decision'
 import type { Config } from './config'
 import type { Decision } from './decision'
 import { resolveParticipants } from './github/participants'
+import { resolveTeamMembership } from './github/teams'
 import { FROZEN_MESSAGE, buildReporter, getRequiredEnv, reportFailClosed, safeWriteSummary, type Reporter } from './reporting'
 
 type Octokit = ReturnType<typeof getOctokit>
@@ -23,9 +23,8 @@ export interface EvaluateInput {
   repoName: string
   pullRequest: PullRequestContext | undefined
   octokit: Octokit
-  // Resolved by the "Resolve frozen team membership" step and read from its output
-  // file; this entrypoint never talks to the org-scoped API itself.
-  teamMembership: Map<string, Set<string>>
+  // Octo-STS-issued, org-scoped client used only to resolve frozen-team membership.
+  orgOctokit: Octokit
   reporter: Reporter
 }
 
@@ -58,12 +57,11 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     return
   }
 
-  const missingTeams = config.frozenTeams.filter((team) => !input.teamMembership.has(team))
-  if (missingTeams.length > 0) {
-    throw new Error(
-      `Team membership resolution did not include: ${missingTeams.join(', ')}. Refusing to treat missing teams as empty.`,
-    )
-  }
+  const teamMembership = await resolveTeamMembership({
+    octokit: input.orgOctokit,
+    org: input.repoOwner,
+    teamHandles: config.frozenTeams,
+  })
 
   const participants = await resolveParticipants({
     octokit: input.octokit,
@@ -84,7 +82,7 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     bypassLabels: config.bypassLabels,
     prLabels: input.pullRequest.labels,
     participants: participants.logins,
-    teamMembership: input.teamMembership,
+    teamMembership,
   })
 
   if (decision.outcome === 'pass') {
@@ -143,14 +141,9 @@ function buildEvaluateInput(reporter: Reporter): EvaluateInput {
     repoName: context.repo.repo,
     pullRequest: extractPullRequestContext(),
     octokit: getOctokit(getRequiredEnv('GITHUB_TOKEN')),
-    teamMembership: parseTeamMembership(readFileSync(getRequiredEnv('TEAM_MEMBERSHIP_FILE'), 'utf8')),
+    orgOctokit: getOctokit(getRequiredEnv('ORG_TOKEN')),
     reporter,
   }
-}
-
-function parseTeamMembership(raw: string): Map<string, Set<string>> {
-  const parsed = JSON.parse(raw) as Record<string, string[]>
-  return new Map(Object.entries(parsed).map(([team, members]) => [team, new Set(members)]))
 }
 
 function extractPullRequestContext(): PullRequestContext | undefined {
