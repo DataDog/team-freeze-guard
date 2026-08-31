@@ -1,11 +1,10 @@
 name: Team freeze guard (e2e)
 
-# Dogfood check (see implementation-plan.md's e2e verification step): runs
-# automatically on every PR here, not just manually. cbeauchesne is in
-# apm-reliability-and-performance but not paintfooding, so with the config below:
-# no label -> FAIL, add `team-freeze-guard` label -> PASS, drop apm from
-# frozen-teams -> PASS (no match). Set frozen-teams to '' to test the "no frozen
-# teams" case.
+# Dogfood check: runs automatically on every PR here
+#
+# 1. no frozen team -> PASS
+# 2. a random frozen team -> PASS
+# 3. apm-reliability-and-performance (repo owner, so very likely a contributing team) is frozen team, but bypass label is present -> PASS
 #
 # Uses `pull_request`, not `_target`, unlike the production consumer workflow —
 # this tests THIS repo's own action code, so it needs the PR's own dist/, same
