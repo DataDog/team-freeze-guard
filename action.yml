@@ -45,7 +45,7 @@ runs:
         FROZEN_TEAMS: ${{ inputs.frozen-teams }}
 
     - name: Restore cached frozen team membership
-      id: cache
+      id: membership-cache
       if: steps.early-checks.outputs.skip != 'true'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
@@ -58,7 +58,7 @@ runs:
     # section), so this is hardcoded here rather than configurable per caller.
     - name: Exchange OIDC identity for an org-scoped GitHub token
       id: octo-sts
-      if: steps.early-checks.outputs.skip != 'true' && steps.cache.outputs.cache-hit != 'true'
+      if: steps.early-checks.outputs.skip != 'true' && steps.membership-cache.outputs.cache-hit != 'true'
       uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
       with:
         scope: DataDog
@@ -71,7 +71,7 @@ runs:
     # a step output, so the cached file and a freshly resolved one are read identically below.
     - name: Resolve frozen team membership
       id: resolve-team-membership
-      if: steps.early-checks.outputs.skip != 'true' && steps.cache.outputs.cache-hit != 'true'
+      if: steps.early-checks.outputs.skip != 'true' && steps.membership-cache.outputs.cache-hit != 'true'
       shell: bash
       run: node "${{ github.action_path }}/dist/resolve-team-membership/index.js"
       env:
