@@ -50,7 +50,7 @@ on:
 permissions:
   id-token: write
   contents: read
-  pull-requests: read
+  actions: write # required by actions/cache to write the team-membership cache
 
 jobs:
   team-freeze-guard:
@@ -99,8 +99,8 @@ An empty `frozen-teams` values means that no check is performed (no code freeze)
 | Permission | Reason |
 | --- | --- |
 | `id-token: write` | Allows `dd-octo-sts-action` to exchange the workflow's OIDC identity for a short-lived GitHub App token. |
-| `contents: read` | Allows the default `GITHUB_TOKEN` to read repository and commit data needed to resolve commit authors and committers. |
-| `pull-requests: read` | Allows the default `GITHUB_TOKEN` to read the pull request and its commit list. |
+| `contents: read` | Allows the default `GITHUB_TOKEN` to read repository and commit data needed to resolve the head commit's committer. |
+| `actions: write` | Allows `actions/cache` to write the team-membership cache. |
 
 An action cannot grant these permissions to itself; they must be declared by the calling workflow.
 
