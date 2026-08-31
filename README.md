@@ -108,6 +108,19 @@ Keep `team-freeze-guard` alone in its job. `id-token: write` applies to every st
 
 The organization scope, Octo STS policy name, and Octo STS pool are intentionally controlled by the action rather than exposed as repository inputs.
 
+### Team membership caching
+
+Frozen-team membership (the result of resolving `frozen-teams` into member lists) is cached in the GitHub Actions cache for up to one hour. Within that hour, and for the same `frozen-teams` configuration, subsequent runs reuse the cached membership instead of exchanging a new OIDC token and re-querying team membership for every pull request event.
+
+This is a deliberate tradeoff, not a fixed design constant:
+
+- A **longer** cache lifetime means fewer Octo STS token exchanges and GitHub API calls, which matters on repositories with high pull request activity.
+- A **shorter** cache lifetime means a team membership change (someone added to or removed from a frozen team) is reflected sooner. During the cache window, a pull request can still pass or fail based on membership as it existed up to an hour ago.
+
+One hour was chosen as a middle ground. Cached data is also invalidated immediately, well before the hour is up, if `frozen-teams` itself changes, since the cache key incorporates a hash of that input.
+
+This caching window is on top of the existing limitation that configuration and membership changes do not automatically re-evaluate already-open pull requests — see [`docs/limitations.md`](docs/limitations.md).
+
 ## Enforcing the result with a ruleset
 
 Running the action is not sufficient by itself. Configure a GitHub repository or organization ruleset that requires the following status check on the target branch:

@@ -13,6 +13,8 @@ The incident process must re-run the latest `Team freeze guard` workflow for eve
 
 This reconciliation should be automated by the system that updates the freeze configuration. If immediate reconciliation cannot be guaranteed, a webhook-based GitHub App is stronger than a pure Action implementation.
 
+Team membership itself is additionally cached for up to one hour (see README's "Team membership caching") independently of this reconciliation gap — a membership change can take up to an hour to be reflected even on a pull request that does get re-evaluated.
+
 ## Label presence is not label authorization
 
 The action verifies that at least one of the configured `bypass-labels` is present. It does not, by itself, restrict who may apply that label.
