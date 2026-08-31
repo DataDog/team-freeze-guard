@@ -1,0 +1,23 @@
+name: Label PRs with team-freeze-guard
+
+# Convenience workflow for manual e2e testing: automatically applies the
+# `team-freeze-guard` bypass label to every newly opened pull request, so the
+# "frozen team + bypass label -> pass" use case doesn't require applying the
+# label by hand. Remove the label manually to exercise the fail/no-label paths.
+
+on:
+  pull_request:
+    types: [opened]
+
+permissions:
+  pull-requests: write
+
+jobs:
+  label:
+    name: Add team-freeze-guard label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Add the label to the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh pr edit "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" --add-label team-freeze-guard

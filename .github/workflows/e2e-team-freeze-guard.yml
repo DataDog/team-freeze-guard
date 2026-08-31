@@ -1,0 +1,52 @@
+name: Team freeze guard (e2e)
+
+# Dogfood check (see implementation-plan.md's e2e verification step): runs
+# automatically on every PR here, not just manually. cbeauchesne is in
+# apm-reliability-and-performance but not paintfooding, so with the config below:
+# no label -> FAIL, add `team-freeze-guard` label -> PASS, drop apm from
+# frozen-teams -> PASS (no match). Set frozen-teams to '' to test the "no frozen
+# teams" case.
+#
+# Uses `pull_request`, not `_target`, unlike the production consumer workflow —
+# this tests THIS repo's own action code, so it needs the PR's own dist/, same
+# trust model as ci.yml. Only safe while PRs come from same-repo branches, not forks.
+on:
+  pull_request:
+    types:
+      - opened
+      - reopened
+      - synchronize
+      - labeled
+      - unlabeled
+      - ready_for_review
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: read
+
+jobs:
+  team-freeze-guard-e2e:
+    name: Team freeze guard (e2e)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: No frozen teams
+        uses: ./
+        with:
+          bypass-labels: ""
+          frozen-teams: ""
+      - name: Ramdom frozen teams
+        uses: ./
+        with:
+          bypass-labels: not-a-real-label
+          frozen-teams: |
+            @DataDog/paintfooding
+      - name: Real contributor team
+        uses: ./
+        with:
+          bypass-labels: |
+            team-freeze-guard
+          frozen-teams: |
+            @DataDog/apm-reliability-and-performance
