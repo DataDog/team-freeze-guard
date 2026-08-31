@@ -1,16 +1,19 @@
 name: Team freeze guard (e2e)
 
-# Dogfood check: runs automatically on every PR here
+# Dogfood check, run manually against a single scratch PR branch rather than
+# on every PR here (branch filters on this trigger only match the PR's base
+# branch, not its head, hence the job-level `if:` below).
 #
 # 1. no frozen team -> PASS
 # 2. a random frozen team -> PASS
 # 3. apm-reliability-and-performance (repo owner, so very likely a contributing team) is frozen team, but bypass label is present -> PASS
 #
-# Uses `pull_request`, not `_target`, unlike the production consumer workflow —
-# this tests THIS repo's own action code, so it needs the PR's own dist/, same
-# trust model as ci.yml. Only safe while PRs come from same-repo branches, not forks.
+# Uses `pull_request_target` (required for octo-sts's trust policy) with a
+# checkout so `uses: ./` has something to resolve against — with no `ref:`
+# override, that checkout pulls `main`, so this always tests main's already-
+# merged action code, not this PR's own diff.
 on:
-  pull_request:
+  pull_request_target:
     types:
       - opened
       - reopened
@@ -28,6 +31,7 @@ jobs:
   team-freeze-guard-e2e:
     name: Team freeze guard (e2e)
     runs-on: ubuntu-latest
+    if: github.head_ref == 'cbeauchesne/e2e-tests'
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
