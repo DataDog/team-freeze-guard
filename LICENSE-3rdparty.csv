@@ -1,0 +1,22 @@
+Component,Origin,License,Copyright
+@actions/core,https://github.com/actions/toolkit,MIT,Copyright 2019 GitHub
+@actions/exec,https://github.com/actions/toolkit,MIT,Copyright 2019 GitHub
+@actions/github,https://github.com/actions/toolkit,MIT,Copyright 2019 GitHub
+@actions/http-client,https://github.com/actions/toolkit,MIT,"Copyright (c) GitHub, Inc."
+@actions/io,https://github.com/actions/toolkit,MIT,Copyright 2019 GitHub
+@octokit/auth-token,https://github.com/octokit/auth-token.js,MIT,Copyright (c) 2019 Octokit contributors
+@octokit/core,https://github.com/octokit/core.js,MIT,Copyright (c) 2019 Octokit contributors
+@octokit/endpoint,https://github.com/octokit/endpoint.js,MIT,Copyright (c) 2018 Octokit contributors
+@octokit/graphql,https://github.com/octokit/graphql.js,MIT,Copyright (c) 2018 Octokit contributors
+@octokit/openapi-types,https://github.com/octokit/openapi-types.ts,MIT,Copyright (c) GitHub 2025
+@octokit/plugin-paginate-rest,https://github.com/octokit/plugin-paginate-rest.js,MIT,Copyright (c) 2019 Octokit contributors
+@octokit/plugin-rest-endpoint-methods,https://github.com/octokit/plugin-rest-endpoint-methods.js,MIT,Copyright (c) 2019 Octokit contributors
+@octokit/request-error,https://github.com/octokit/request-error.js,MIT,Copyright (c) 2019 Octokit contributors
+@octokit/request,https://github.com/octokit/request.js,MIT,Copyright (c) 2018 Octokit contributors
+@octokit/types,https://github.com/octokit/types.ts,MIT,Copyright (c) 2019 Octokit contributors
+before-after-hook,https://github.com/gr2m/before-after-hook,Apache-2.0,Copyright 2018 Gregor Martynus and other contributors.
+content-type,https://github.com/jshttp/content-type,MIT,Copyright (c) 2015 Douglas Christopher Wilson
+json-with-bigint,https://github.com/Ivan-Korolenko/json-with-bigint,MIT,Copyright (c) 2023 Ivan Korolenko
+tunnel,https://github.com/koichik/node-tunnel,MIT,Copyright (c) 2012 Koichi Kobayashi
+undici,https://github.com/nodejs/undici,MIT,Copyright (c) Matteo Collina and Undici contributors
+universal-user-agent,https://github.com/gr2m/universal-user-agent,ISC,"Copyright (c) 2018-2021, Gregor Martynus (https://github.com/gr2m)"
