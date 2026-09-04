@@ -16,10 +16,10 @@
     "@actions/github": "^8.0.1"
   },
   "devDependencies": {
-    "@eslint/js": "^9.9.0",
+    "@eslint/js": "^10.0.1",
     "@types/node": "^20.14.0",
     "@vercel/ncc": "^0.38.1",
-    "eslint": "^9.9.0",
+    "eslint": "^10.9.1",
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.0.0",
     "vitest": "^4.1.11"
