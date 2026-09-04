@@ -31825,6 +31825,10 @@ module.exports = {
 
 "use strict";
 
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.ConfigError = void 0;
 exports.parseConfig = parseConfig;
@@ -31900,6 +31904,10 @@ function parseFrozenTeams(raw, repoOwner) {
 
 "use strict";
 
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.hasBypassLabel = hasBypassLabel;
 exports.decide = decide;
@@ -31938,6 +31946,10 @@ function decide(input) {
 
 "use strict";
 
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.resolveParticipants = resolveParticipants;
 async function resolveParticipants(input) {
@@ -31975,6 +31987,10 @@ function recordIdentity(login, unmappedIdentity, logins, unmappedIdentities) {
 
 "use strict";
 
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.TeamResolutionError = void 0;
 exports.resolveTeamMembership = resolveTeamMembership;
@@ -32045,6 +32061,10 @@ function getHttpStatus(error) {
 
 "use strict";
 
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
@@ -32214,6 +32234,10 @@ if (require.main === require.cache[eval('__filename')]) {
 
 "use strict";
 
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
 var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
     if (k2 === undefined) k2 = k;
     var desc = Object.getOwnPropertyDescriptor(m, k);
