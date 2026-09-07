@@ -1,7 +1,9 @@
 
 ## Octo STS trust policy
 
-The action internally requests an organization-scoped token from `dd-octo-sts-action`. The corresponding trust policy must:
+The action internally requests an organization-scoped token from `dd-octo-sts-action`, which is internal to DataDog. As a direct consequence, this GitHub Action won't work on any repository other than DataDog's.
+
+The corresponding trust policy must:
 
 - Trust the calling repository and its protected workflow context.
 - Grant only the GitHub organization `Members: read` permission.
