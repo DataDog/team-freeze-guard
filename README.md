@@ -4,7 +4,7 @@
 
 When a pull request author or commit committer belongs to a configured frozen GitHub team, the pull request must carry at least one of the configured bypass labels. Otherwise, the action fails with `Your team is frozen`, and a required GitHub ruleset check prevents the pull request from being merged.
 
-The action uses [DataDog/dd-octo-sts-action](https://github.com/DataDog/dd-octo-sts-action) internally to obtain a short-lived GitHub token with organization membership permissions. It does not require a personal access token or a GitHub App private key in the consuming repository.
+The action uses [DataDog/dd-octo-sts-action](https://github.com/DataDog/dd-octo-sts-action) internally to obtain a short-lived GitHub token with organization membership permissions. It does not require a personal access token or a GitHub App private key in the consuming repository. This GitHub Action does not contain any other mechanism for obtaining this membership permission, which means it is meant to work only on DataDog's org repositories.
 
 ## How it works
 
