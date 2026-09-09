@@ -13,6 +13,10 @@ inputs:
     # input must fail closed (ConfigError), not be silently treated the same
     # as a caller who explicitly disables the freeze with frozen-teams: ''.
     default: '__frozen-teams-not-set__'
+  frozen-message:
+    description: 'Message used as the check failure reason and summary heading when a frozen team participates.'
+    required: true
+    default: 'Your team is frozen'
 
 runs:
   using: 'composite'
@@ -58,3 +62,4 @@ runs:
         # the dash rather than using an underscore.
         INPUT_BYPASS-LABELS: ${{ inputs.bypass-labels }}
         INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
+        INPUT_FROZEN-MESSAGE: ${{ inputs.frozen-message }}

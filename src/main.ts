@@ -24,6 +24,7 @@ export interface PullRequestContext {
 export interface EvaluateInput {
   bypassLabelsInput: string | undefined
   frozenTeamsInput: string | undefined
+  frozenMessageInput: string | undefined
   repoOwner: string
   repoName: string
   pullRequest: PullRequestContext | undefined
@@ -45,6 +46,7 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
   const config = parseConfig({
     bypassLabels: input.bypassLabelsInput,
     frozenTeams: input.frozenTeamsInput,
+    frozenMessage: input.frozenMessageInput,
     repoOwner: input.repoOwner,
   })
 
@@ -100,13 +102,13 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
 
 async function reportFailure(decision: Decision, config: Config, reporter: Reporter): Promise<void> {
   await safeWriteSummary(reporter, buildFailureSummary(decision, config))
-  reporter.setFailed(FROZEN_MESSAGE)
+  reporter.setFailed(config.frozenMessage)
 }
 
 function buildFailureSummary(decision: Decision, config: Config): string {
   const teams = decision.matchedTeams.join(', ')
   const lines = [
-    'Your team is frozen.',
+    `${config.frozenMessage}.`,
     '',
     `At least one pull request participant belongs to ${teams}.`,
   ]
@@ -142,6 +144,7 @@ function buildEvaluateInput(reporter: Reporter): EvaluateInput {
   return {
     bypassLabelsInput: core.getInput('bypass-labels'),
     frozenTeamsInput: core.getInput('frozen-teams'),
+    frozenMessageInput: core.getInput('frozen-message'),
     repoOwner: context.repo.owner,
     repoName: context.repo.repo,
     pullRequest: extractPullRequestContext(),

@@ -91,6 +91,7 @@ An empty `frozen-teams` values means that no check is performed (no code freeze)
 | --- | --- | --- | --- |
 | `bypass-labels` | Yes | None | Newline-delimited list of labels; any one present satisfies the check when a participant belongs to a frozen team. Matching is case-sensitive. |
 | `frozen-teams` | Yes | None | Newline-delimited list of frozen GitHub team slugs. An empty list disables all freezes. |
+| `frozen-message` | No | `Your team is frozen` | Message used as the check failure reason and summary heading when a frozen team participates. |
 
 
 ### Required workflow permissions

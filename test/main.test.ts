@@ -57,6 +57,7 @@ function baseInput(overrides: Partial<EvaluateInput> = {}): EvaluateInput {
   return {
     bypassLabelsInput: 'ci-remediation',
     frozenTeamsInput: '@org/team-a',
+    frozenMessageInput: 'Your team is frozen',
     repoOwner: 'org',
     repoName: 'repo',
     pullRequest: pullRequest(),
@@ -313,5 +314,20 @@ describe('evaluate', () => {
         'No bypass labels are configured for this repository; contact an administrator to proceed.',
       ].join('\n'),
     ])
+  })
+
+  it('uses the configured frozen-message as the failure reason and summary heading', async () => {
+    const reporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        frozenMessageInput: 'Merges are paused while the team is on-call',
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.failures).toEqual(['Merges are paused while the team is on-call'])
+    expect(reporter.summaries[0]).toContain('Merges are paused while the team is on-call.')
   })
 })

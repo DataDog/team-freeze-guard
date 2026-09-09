@@ -7,18 +7,21 @@ import { describe, expect, it } from 'vitest'
 import { ConfigError, parseConfig } from '../src/config'
 
 const repoOwner = 'my-org'
+const frozenMessage = 'Your team is frozen'
 
 describe('parseConfig', () => {
   it('parses valid bypass-labels and frozen-teams lists', () => {
     const result = parseConfig({
       bypassLabels: 'ci-remediation\nhotfix',
       frozenTeams: '@my-org/apm-sdk\n@my-org/profiling',
+      frozenMessage,
       repoOwner,
     })
 
     expect(result).toEqual({
       bypassLabels: ['ci-remediation', 'hotfix'],
       frozenTeams: ['@my-org/apm-sdk', '@my-org/profiling'],
+      frozenMessage,
     })
   })
 
@@ -26,12 +29,14 @@ describe('parseConfig', () => {
     const result = parseConfig({
       bypassLabels: 'ci-remediation',
       frozenTeams: '',
+      frozenMessage,
       repoOwner,
     })
 
     expect(result).toEqual({
       bypassLabels: ['ci-remediation'],
       frozenTeams: [],
+      frozenMessage,
     })
   })
 
@@ -39,12 +44,14 @@ describe('parseConfig', () => {
     const result = parseConfig({
       bypassLabels: '',
       frozenTeams: '@my-org/apm-sdk',
+      frozenMessage,
       repoOwner,
     })
 
     expect(result).toEqual({
       bypassLabels: [],
       frozenTeams: ['@my-org/apm-sdk'],
+      frozenMessage,
     })
   })
 
@@ -52,12 +59,14 @@ describe('parseConfig', () => {
     const result = parseConfig({
       bypassLabels: '\n  ci-remediation  \n\n',
       frozenTeams: '\n\n  @my-org/apm-sdk  \n',
+      frozenMessage,
       repoOwner,
     })
 
     expect(result).toEqual({
       bypassLabels: ['ci-remediation'],
       frozenTeams: ['@my-org/apm-sdk'],
+      frozenMessage,
     })
   })
 
@@ -65,12 +74,14 @@ describe('parseConfig', () => {
     const result = parseConfig({
       bypassLabels: 'ci-remediation\nCI-Remediation\nci-remediation',
       frozenTeams: '',
+      frozenMessage,
       repoOwner,
     })
 
     expect(result).toEqual({
       bypassLabels: ['ci-remediation', 'CI-Remediation'],
       frozenTeams: [],
+      frozenMessage,
     })
   })
 
@@ -78,12 +89,29 @@ describe('parseConfig', () => {
     const result = parseConfig({
       bypassLabels: '',
       frozenTeams: '@my-org/apm-sdk\n@my-org/apm-sdk',
+      frozenMessage,
       repoOwner,
     })
 
     expect(result).toEqual({
       bypassLabels: [],
       frozenTeams: ['@my-org/apm-sdk'],
+      frozenMessage,
+    })
+  })
+
+  it('uses whatever frozen-message the calling workflow provides, unmodified', () => {
+    const result = parseConfig({
+      bypassLabels: '',
+      frozenTeams: '@my-org/apm-sdk',
+      frozenMessage: 'Merges are paused for this team',
+      repoOwner,
+    })
+
+    expect(result).toEqual({
+      bypassLabels: [],
+      frozenTeams: ['@my-org/apm-sdk'],
+      frozenMessage: 'Merges are paused for this team',
     })
   })
 
@@ -91,6 +119,7 @@ describe('parseConfig', () => {
     const result = parseConfig({
       bypassLabels: undefined,
       frozenTeams: '',
+      frozenMessage,
       repoOwner,
     })
 
@@ -101,6 +130,18 @@ describe('parseConfig', () => {
     const result = parseConfig({
       bypassLabels: '',
       frozenTeams: undefined,
+      frozenMessage,
+      repoOwner,
+    })
+
+    expect(result).toBeInstanceOf(ConfigError)
+  })
+
+  it('fails closed when frozen-message is missing (undefined)', () => {
+    const result = parseConfig({
+      bypassLabels: '',
+      frozenTeams: '',
+      frozenMessage: undefined,
       repoOwner,
     })
 
@@ -111,6 +152,7 @@ describe('parseConfig', () => {
     const result = parseConfig({
       bypassLabels: '',
       frozenTeams: '@my-org/APM SDK',
+      frozenMessage,
       repoOwner,
     })
 
@@ -122,6 +164,7 @@ describe('parseConfig', () => {
     const result = parseConfig({
       bypassLabels: '',
       frozenTeams: 'apm-sdk',
+      frozenMessage,
       repoOwner,
     })
 
@@ -132,6 +175,7 @@ describe('parseConfig', () => {
     const result = parseConfig({
       bypassLabels: '',
       frozenTeams: '@other-org/apm-sdk',
+      frozenMessage,
       repoOwner,
     })
 
@@ -144,6 +188,7 @@ describe('parseConfig', () => {
     const result = parseConfig({
       bypassLabels: '',
       frozenTeams: '@My-Org/apm-sdk',
+      frozenMessage,
       repoOwner,
     })
 

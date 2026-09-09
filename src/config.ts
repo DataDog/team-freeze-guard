@@ -6,6 +6,7 @@
 export interface Config {
   bypassLabels: string[]
   frozenTeams: string[]
+  frozenMessage: string
 }
 
 export class ConfigError extends Error {
@@ -18,15 +19,16 @@ export class ConfigError extends Error {
 export interface ParseConfigInput {
   bypassLabels: string | undefined
   frozenTeams: string | undefined
+  frozenMessage: string | undefined
   repoOwner: string
 }
 
 const TEAM_ENTRY_PATTERN = /^@([^/]+)\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/
 
 export function parseConfig(input: ParseConfigInput): Config | ConfigError {
-  if (input.bypassLabels === undefined || input.frozenTeams === undefined) {
+  if (input.bypassLabels === undefined || input.frozenTeams === undefined || input.frozenMessage === undefined) {
     return new ConfigError(
-      'The "bypass-labels" and "frozen-teams" inputs are required and must be provided by the calling workflow.',
+      'The "bypass-labels", "frozen-teams" and "frozen-message" inputs are required and must be provided by the calling workflow.',
     )
   }
 
@@ -36,7 +38,7 @@ export function parseConfig(input: ParseConfigInput): Config | ConfigError {
     return frozenTeams
   }
 
-  return { bypassLabels, frozenTeams }
+  return { bypassLabels, frozenTeams, frozenMessage: input.frozenMessage }
 }
 
 function splitLines(raw: string): string[] {
