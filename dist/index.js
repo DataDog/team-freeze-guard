@@ -31842,15 +31842,15 @@ class ConfigError extends Error {
 exports.ConfigError = ConfigError;
 const TEAM_ENTRY_PATTERN = /^@([^/]+)\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/;
 function parseConfig(input) {
-    if (input.bypassLabels === undefined || input.frozenTeams === undefined) {
-        return new ConfigError('The "bypass-labels" and "frozen-teams" inputs are required and must be provided by the calling workflow.');
+    if (input.bypassLabels === undefined || input.frozenTeams === undefined || input.frozenMessage === undefined) {
+        return new ConfigError('The "bypass-labels", "frozen-teams" and "frozen-message" inputs are required and must be provided by the calling workflow.');
     }
     const bypassLabels = parseBypassLabels(input.bypassLabels);
     const frozenTeams = parseFrozenTeams(input.frozenTeams, input.repoOwner);
     if (frozenTeams instanceof ConfigError) {
         return frozenTeams;
     }
-    return { bypassLabels, frozenTeams };
+    return { bypassLabels, frozenTeams, frozenMessage: input.frozenMessage };
 }
 function splitLines(raw) {
     return raw
@@ -32120,6 +32120,7 @@ async function evaluateOrThrow(input) {
     const config = (0, config_1.parseConfig)({
         bypassLabels: input.bypassLabelsInput,
         frozenTeams: input.frozenTeamsInput,
+        frozenMessage: input.frozenMessageInput,
         repoOwner: input.repoOwner,
     });
     if (config instanceof config_1.ConfigError) {
@@ -32163,12 +32164,13 @@ async function evaluateOrThrow(input) {
 }
 async function reportFailure(decision, config, reporter) {
     await (0, reporting_1.safeWriteSummary)(reporter, buildFailureSummary(decision, config));
-    reporter.setFailed(reporting_1.FROZEN_MESSAGE);
+    reporter.setFailed(config.frozenMessage);
 }
 function buildFailureSummary(decision, config) {
     const teams = decision.matchedTeams.join(', ');
+    const heading = /[.!?]$/.test(config.frozenMessage) ? config.frozenMessage : `${config.frozenMessage}.`;
     const lines = [
-        'Your team is frozen.',
+        heading,
         '',
         `At least one pull request participant belongs to ${teams}.`,
     ];
@@ -32186,7 +32188,7 @@ function run() {
     runWithReporter(reporter).catch(() => {
         // reportFailClosed handles reporting internally and does not itself throw
         // under normal operation; this is a last-resort backstop.
-        core.setFailed(reporting_1.FROZEN_MESSAGE);
+        core.setFailed(reporting_1.FAIL_CLOSED_MESSAGE);
     });
 }
 async function runWithReporter(reporter) {
@@ -32201,6 +32203,7 @@ function buildEvaluateInput(reporter) {
     return {
         bypassLabelsInput: core.getInput('bypass-labels'),
         frozenTeamsInput: core.getInput('frozen-teams'),
+        frozenMessageInput: core.getInput('frozen-message'),
         repoOwner: github_1.context.repo.owner,
         repoName: github_1.context.repo.repo,
         pullRequest: extractPullRequestContext(),
@@ -32272,16 +32275,19 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.FAIL_CLOSED_SUMMARY = exports.FROZEN_MESSAGE = void 0;
+exports.FAIL_CLOSED_MESSAGE = exports.FAIL_CLOSED_SUMMARY = void 0;
 exports.buildReporter = buildReporter;
 exports.reportFailClosed = reportFailClosed;
 exports.safeWriteSummary = safeWriteSummary;
 exports.formatError = formatError;
 exports.getRequiredEnv = getRequiredEnv;
 const core = __importStar(__nccwpck_require__(7484));
-exports.FROZEN_MESSAGE = 'Your team is frozen';
 exports.FAIL_CLOSED_SUMMARY = 'The team freeze policy could not be evaluated safely, so this check fails closed rather than ' +
     'silently permitting a merge that might belong to a frozen team. See the workflow run logs for details.';
+// Deliberately distinct from the configurable "frozen-message" input: this failure
+// means the policy could not be evaluated at all, not that a frozen team was found,
+// and should read as such rather than adopting the caller's frozen-team wording.
+exports.FAIL_CLOSED_MESSAGE = 'Team freeze policy could not be evaluated safely';
 function buildReporter() {
     return {
         info: core.info,
@@ -32295,7 +32301,7 @@ function buildReporter() {
 async function reportFailClosed(reporter, error) {
     reporter.warning(formatError(error));
     await safeWriteSummary(reporter, exports.FAIL_CLOSED_SUMMARY);
-    reporter.setFailed(exports.FROZEN_MESSAGE);
+    reporter.setFailed(exports.FAIL_CLOSED_MESSAGE);
 }
 async function safeWriteSummary(reporter, markdown) {
     try {

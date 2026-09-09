@@ -11,7 +11,7 @@ import type { Config } from './config'
 import type { Decision } from './decision'
 import { resolveParticipants } from './github/participants'
 import { resolveTeamMembership } from './github/teams'
-import { FROZEN_MESSAGE, buildReporter, getRequiredEnv, reportFailClosed, safeWriteSummary, type Reporter } from './reporting'
+import { FAIL_CLOSED_MESSAGE, buildReporter, getRequiredEnv, reportFailClosed, safeWriteSummary, type Reporter } from './reporting'
 
 type Octokit = ReturnType<typeof getOctokit>
 
@@ -24,6 +24,7 @@ export interface PullRequestContext {
 export interface EvaluateInput {
   bypassLabelsInput: string | undefined
   frozenTeamsInput: string | undefined
+  frozenMessageInput: string | undefined
   repoOwner: string
   repoName: string
   pullRequest: PullRequestContext | undefined
@@ -45,6 +46,7 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
   const config = parseConfig({
     bypassLabels: input.bypassLabelsInput,
     frozenTeams: input.frozenTeamsInput,
+    frozenMessage: input.frozenMessageInput,
     repoOwner: input.repoOwner,
   })
 
@@ -100,13 +102,14 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
 
 async function reportFailure(decision: Decision, config: Config, reporter: Reporter): Promise<void> {
   await safeWriteSummary(reporter, buildFailureSummary(decision, config))
-  reporter.setFailed(FROZEN_MESSAGE)
+  reporter.setFailed(config.frozenMessage)
 }
 
 function buildFailureSummary(decision: Decision, config: Config): string {
   const teams = decision.matchedTeams.join(', ')
+  const heading = /[.!?]$/.test(config.frozenMessage) ? config.frozenMessage : `${config.frozenMessage}.`
   const lines = [
-    'Your team is frozen.',
+    heading,
     '',
     `At least one pull request participant belongs to ${teams}.`,
   ]
@@ -126,7 +129,7 @@ export function run(): void {
   runWithReporter(reporter).catch(() => {
     // reportFailClosed handles reporting internally and does not itself throw
     // under normal operation; this is a last-resort backstop.
-    core.setFailed(FROZEN_MESSAGE)
+    core.setFailed(FAIL_CLOSED_MESSAGE)
   })
 }
 
@@ -142,6 +145,7 @@ function buildEvaluateInput(reporter: Reporter): EvaluateInput {
   return {
     bypassLabelsInput: core.getInput('bypass-labels'),
     frozenTeamsInput: core.getInput('frozen-teams'),
+    frozenMessageInput: core.getInput('frozen-message'),
     repoOwner: context.repo.owner,
     repoName: context.repo.repo,
     pullRequest: extractPullRequestContext(),
