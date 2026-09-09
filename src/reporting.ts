@@ -30,8 +30,8 @@ export function buildReporter(): Reporter {
 export async function reportFailClosed(reporter: Reporter, error: unknown): Promise<void> {
   reporter.warning(formatError(error))
   await safeWriteSummary(reporter, FAIL_CLOSED_SUMMARY)
-  // frozen-message is a required action.yml input with a default, so it is always set
-  // when this code runs as the action; there is no config to fall back to at this point.
+  // frozen-message has a default in action.yml, so it is always set when this code runs as the action;
+  // there is no config to fall back to at this point.
   reporter.setFailed(core.getInput('frozen-message'))
 }
 
