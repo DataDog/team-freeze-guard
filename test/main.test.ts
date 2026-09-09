@@ -330,4 +330,18 @@ describe('evaluate', () => {
     expect(reporter.failures).toEqual(['Merges are paused while the team is on-call'])
     expect(reporter.summaries[0]).toContain('Merges are paused while the team is on-call.')
   })
+
+  it('does not double punctuation when the configured frozen-message already ends with it', async () => {
+    const reporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        frozenMessageInput: 'Merges are paused!',
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.summaries[0]?.split('\n')[0]).toBe('Merges are paused!')
+  })
 })

@@ -32168,8 +32168,9 @@ async function reportFailure(decision, config, reporter) {
 }
 function buildFailureSummary(decision, config) {
     const teams = decision.matchedTeams.join(', ');
+    const heading = /[.!?]$/.test(config.frozenMessage) ? config.frozenMessage : `${config.frozenMessage}.`;
     const lines = [
-        `${config.frozenMessage}.`,
+        heading,
         '',
         `At least one pull request participant belongs to ${teams}.`,
     ];

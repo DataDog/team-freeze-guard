@@ -107,8 +107,9 @@ async function reportFailure(decision: Decision, config: Config, reporter: Repor
 
 function buildFailureSummary(decision: Decision, config: Config): string {
   const teams = decision.matchedTeams.join(', ')
+  const heading = /[.!?]$/.test(config.frozenMessage) ? config.frozenMessage : `${config.frozenMessage}.`
   const lines = [
-    `${config.frozenMessage}.`,
+    heading,
     '',
     `At least one pull request participant belongs to ${teams}.`,
   ]
