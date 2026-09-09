@@ -32187,7 +32187,7 @@ function run() {
     runWithReporter(reporter).catch(() => {
         // reportFailClosed handles reporting internally and does not itself throw
         // under normal operation; this is a last-resort backstop.
-        core.setFailed(reporting_1.FROZEN_MESSAGE);
+        core.setFailed(core.getInput('frozen-message'));
     });
 }
 async function runWithReporter(reporter) {
@@ -32274,14 +32274,13 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.FAIL_CLOSED_SUMMARY = exports.FROZEN_MESSAGE = void 0;
+exports.FAIL_CLOSED_SUMMARY = void 0;
 exports.buildReporter = buildReporter;
 exports.reportFailClosed = reportFailClosed;
 exports.safeWriteSummary = safeWriteSummary;
 exports.formatError = formatError;
 exports.getRequiredEnv = getRequiredEnv;
 const core = __importStar(__nccwpck_require__(7484));
-exports.FROZEN_MESSAGE = 'Your team is frozen';
 exports.FAIL_CLOSED_SUMMARY = 'The team freeze policy could not be evaluated safely, so this check fails closed rather than ' +
     'silently permitting a merge that might belong to a frozen team. See the workflow run logs for details.';
 function buildReporter() {
@@ -32297,7 +32296,9 @@ function buildReporter() {
 async function reportFailClosed(reporter, error) {
     reporter.warning(formatError(error));
     await safeWriteSummary(reporter, exports.FAIL_CLOSED_SUMMARY);
-    reporter.setFailed(exports.FROZEN_MESSAGE);
+    // frozen-message is a required action.yml input with a default, so it is always set
+    // when this code runs as the action; there is no config to fall back to at this point.
+    reporter.setFailed(core.getInput('frozen-message'));
 }
 async function safeWriteSummary(reporter, markdown) {
     try {

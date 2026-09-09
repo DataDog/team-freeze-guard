@@ -12,8 +12,6 @@ export interface Reporter {
   writeSummary(markdown: string): Promise<void>
 }
 
-export const FROZEN_MESSAGE = 'Your team is frozen'
-
 export const FAIL_CLOSED_SUMMARY =
   'The team freeze policy could not be evaluated safely, so this check fails closed rather than ' +
   'silently permitting a merge that might belong to a frozen team. See the workflow run logs for details.'
@@ -32,7 +30,9 @@ export function buildReporter(): Reporter {
 export async function reportFailClosed(reporter: Reporter, error: unknown): Promise<void> {
   reporter.warning(formatError(error))
   await safeWriteSummary(reporter, FAIL_CLOSED_SUMMARY)
-  reporter.setFailed(FROZEN_MESSAGE)
+  // frozen-message is a required action.yml input with a default, so it is always set
+  // when this code runs as the action; there is no config to fall back to at this point.
+  reporter.setFailed(core.getInput('frozen-message'))
 }
 
 export async function safeWriteSummary(reporter: Reporter, markdown: string): Promise<void> {

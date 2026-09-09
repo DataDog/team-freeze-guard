@@ -7,6 +7,11 @@ import { describe, expect, it, vi } from 'vitest'
 import { evaluate, type EvaluateInput, type PullRequestContext } from '../src/main'
 import type { Reporter } from '../src/reporting'
 
+// The fail-closed path reads the "frozen-message" action input directly (it always exists,
+// since action.yml declares it as required with a default), mirroring the real INPUT_FROZEN-MESSAGE
+// environment variable @actions/toolkit exchanges it for when the action is invoked.
+process.env['INPUT_FROZEN-MESSAGE'] = 'Your team is frozen'
+
 function fakeReporter(): Reporter & { summaries: string[]; failures: string[]; infos: string[]; warnings: string[] } {
   const summaries: string[] = []
   const failures: string[] = []
