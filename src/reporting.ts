@@ -16,6 +16,11 @@ export const FAIL_CLOSED_SUMMARY =
   'The team freeze policy could not be evaluated safely, so this check fails closed rather than ' +
   'silently permitting a merge that might belong to a frozen team. See the workflow run logs for details.'
 
+// Deliberately distinct from the configurable "frozen-message" input: this failure
+// means the policy could not be evaluated at all, not that a frozen team was found,
+// and should read as such rather than adopting the caller's frozen-team wording.
+export const FAIL_CLOSED_MESSAGE = 'Team freeze policy could not be evaluated safely'
+
 export function buildReporter(): Reporter {
   return {
     info: core.info,
@@ -30,9 +35,7 @@ export function buildReporter(): Reporter {
 export async function reportFailClosed(reporter: Reporter, error: unknown): Promise<void> {
   reporter.warning(formatError(error))
   await safeWriteSummary(reporter, FAIL_CLOSED_SUMMARY)
-  // frozen-message has a default in action.yml, so it is always set when this code runs as the action;
-  // there is no config to fall back to at this point.
-  reporter.setFailed(core.getInput('frozen-message'))
+  reporter.setFailed(FAIL_CLOSED_MESSAGE)
 }
 
 export async function safeWriteSummary(reporter: Reporter, markdown: string): Promise<void> {

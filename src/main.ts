@@ -11,7 +11,7 @@ import type { Config } from './config'
 import type { Decision } from './decision'
 import { resolveParticipants } from './github/participants'
 import { resolveTeamMembership } from './github/teams'
-import { buildReporter, getRequiredEnv, reportFailClosed, safeWriteSummary, type Reporter } from './reporting'
+import { FAIL_CLOSED_MESSAGE, buildReporter, getRequiredEnv, reportFailClosed, safeWriteSummary, type Reporter } from './reporting'
 
 type Octokit = ReturnType<typeof getOctokit>
 
@@ -128,7 +128,7 @@ export function run(): void {
   runWithReporter(reporter).catch(() => {
     // reportFailClosed handles reporting internally and does not itself throw
     // under normal operation; this is a last-resort backstop.
-    core.setFailed(core.getInput('frozen-message'))
+    core.setFailed(FAIL_CLOSED_MESSAGE)
   })
 }
 

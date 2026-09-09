@@ -32187,7 +32187,7 @@ function run() {
     runWithReporter(reporter).catch(() => {
         // reportFailClosed handles reporting internally and does not itself throw
         // under normal operation; this is a last-resort backstop.
-        core.setFailed(core.getInput('frozen-message'));
+        core.setFailed(reporting_1.FAIL_CLOSED_MESSAGE);
     });
 }
 async function runWithReporter(reporter) {
@@ -32274,7 +32274,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.FAIL_CLOSED_SUMMARY = void 0;
+exports.FAIL_CLOSED_MESSAGE = exports.FAIL_CLOSED_SUMMARY = void 0;
 exports.buildReporter = buildReporter;
 exports.reportFailClosed = reportFailClosed;
 exports.safeWriteSummary = safeWriteSummary;
@@ -32283,6 +32283,10 @@ exports.getRequiredEnv = getRequiredEnv;
 const core = __importStar(__nccwpck_require__(7484));
 exports.FAIL_CLOSED_SUMMARY = 'The team freeze policy could not be evaluated safely, so this check fails closed rather than ' +
     'silently permitting a merge that might belong to a frozen team. See the workflow run logs for details.';
+// Deliberately distinct from the configurable "frozen-message" input: this failure
+// means the policy could not be evaluated at all, not that a frozen team was found,
+// and should read as such rather than adopting the caller's frozen-team wording.
+exports.FAIL_CLOSED_MESSAGE = 'Team freeze policy could not be evaluated safely';
 function buildReporter() {
     return {
         info: core.info,
@@ -32296,9 +32300,7 @@ function buildReporter() {
 async function reportFailClosed(reporter, error) {
     reporter.warning(formatError(error));
     await safeWriteSummary(reporter, exports.FAIL_CLOSED_SUMMARY);
-    // frozen-message has a default in action.yml, so it is always set when this code runs as the action;
-    // there is no config to fall back to at this point.
-    reporter.setFailed(core.getInput('frozen-message'));
+    reporter.setFailed(exports.FAIL_CLOSED_MESSAGE);
 }
 async function safeWriteSummary(reporter, markdown) {
     try {
