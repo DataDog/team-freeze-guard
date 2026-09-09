@@ -15,7 +15,7 @@ inputs:
     default: '__frozen-teams-not-set__'
   frozen-message:
     description: 'Message used as the check failure reason and summary heading when a frozen team participates.'
-    required: true
+    required: false
     default: 'Your team is frozen'
 
 runs:
