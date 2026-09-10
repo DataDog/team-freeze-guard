@@ -2,7 +2,7 @@
 
 `team-freeze-guard` enforces per-team code freezes on GitHub pull requests.
 
-When a pull request author or commit committer belongs to a configured frozen GitHub team, the pull request must carry at least one of the configured bypass labels. Otherwise, the action fails with `Your team is frozen`, and a required GitHub ruleset check prevents the pull request from being merged.
+When a pull request author or commit committer belongs to a configured frozen GitHub team, the pull request must satisfy every configured bypass mechanism: it must carry at least one of the configured bypass labels (when `bypass-labels` is set), and its title must match the configured `bypass-title-pattern` (when set). Otherwise, the action fails with `Your team is frozen`, and a required GitHub ruleset check prevents the pull request from being merged.
 
 The action uses [DataDog/dd-octo-sts-action](https://github.com/DataDog/dd-octo-sts-action) internally to obtain a short-lived GitHub token with organization membership permissions. It does not require a personal access token or a GitHub App private key in the consuming repository. This GitHub Action does not contain any other mechanism for obtaining this membership permission, which means it is meant to work only on DataDog's org repositories.
 
@@ -13,7 +13,7 @@ For every relevant pull request event, the action evaluates this rule:
 ```mermaid
 flowchart TD
     A["Is any team frozen?"] -->|No| PASS1["Pass"]
-    A -->|Yes| B["Is a bypass label present?"]
+    A -->|Yes| B["Are all configured bypass conditions satisfied?<br/>(bypass label present, PR title matches pattern)"]
     B -->|Yes| PASS2["Pass"]
     B -->|No| C["Is a participant member of a frozen team?"]
     C -->|No| PASS3["Pass"]
@@ -46,6 +46,7 @@ on:
       - labeled
       - unlabeled
       - ready_for_review
+      - edited
 
 permissions:
   id-token: write
@@ -72,7 +73,13 @@ Team names must be GitHub team slugs, not display names. For example, configure 
 
 `frozen-teams` is a newline-delimited list, one `@org/team-slug` per line, as shown above. Blank lines are ignored. Every team must belong to the same GitHub organization as the repository; a team from another organization is rejected as a configuration error, since the Octo STS token is scoped to a single organization.
 
-`bypass-labels` is also a newline-delimited list, one label name per line. A pull request needs only one of the configured labels to satisfy the check; matching is case-sensitive, so a configured label must match the pull request's label exactly.
+`bypass-labels` is also a newline-delimited list, one label name per line. A pull request needs only one of the configured labels to satisfy this mechanism; matching is case-sensitive, so a configured label must match the pull request's label exactly.
+
+`bypass-title-pattern` is a single regular expression (JavaScript `RegExp` syntax), tested against the pull request's title with `.test()`. Leave it empty (the default) to disable this mechanism.
+
+When both `bypass-labels` and `bypass-title-pattern` are configured, both must be satisfied to bypass the check: a bypass label alone, or a matching title alone, is not enough. Each mechanism that is left unconfigured (empty) is treated as satisfied and does not block the bypass.
+
+When `bypass-title-pattern` is configured, include `edited` in the workflow's `types`, as shown above, so that editing the pull request title re-triggers evaluation.
 
 Do not add a checkout step. The action reads the pull request and the trusted configuration through the `with` blocks; it must never execute code from the pull request branch.
 
@@ -89,7 +96,8 @@ An empty `frozen-teams` values means that no check is performed (no code freeze)
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
-| `bypass-labels` | Yes | None | Newline-delimited list of labels; any one present satisfies the check when a participant belongs to a frozen team. Matching is case-sensitive. |
+| `bypass-labels` | Yes | None | Newline-delimited list of labels; any one present satisfies this bypass mechanism when a participant belongs to a frozen team. Matching is case-sensitive. |
+| `bypass-title-pattern` | No | None (disabled) | Regular expression the pull request title must match to satisfy this bypass mechanism. Empty disables it. When combined with `bypass-labels`, both configured mechanisms must be satisfied. |
 | `frozen-teams` | Yes | None | Newline-delimited list of frozen GitHub team slugs. An empty list disables all freezes. |
 | `frozen-message` | No | `Your team is frozen` | Message used as the check failure reason and summary heading when a frozen team participates. |
 
@@ -132,10 +140,11 @@ Keep the job name stable. Changing it changes the status-check name and can leav
 | --- | --- |
 | No frozen teams are configured | Pass |
 | No participant belongs to a frozen team | Pass |
-| A participant belongs to a frozen team and no bypass label is present | Fail |
-| A participant belongs to a frozen team and a bypass label is present | Pass |
+| A participant belongs to a frozen team and no configured bypass mechanism is satisfied | Fail |
+| A participant belongs to a frozen team and every configured bypass mechanism is satisfied | Pass |
+| A participant belongs to a frozen team, both `bypass-labels` and `bypass-title-pattern` are configured, and only one of them is satisfied | Fail |
 | The last remaining bypass label is removed while a participant belongs to a frozen team | Re-evaluate and fail |
-| A new commit introduces a frozen participant | Re-evaluate and require a bypass label |
+| A new commit introduces a frozen participant | Re-evaluate and require the configured bypass mechanisms |
 | The configuration is missing or malformed | Fail |
 | A configured frozen team is unknown or inaccessible | Fail |
 | GitHub or Octo STS cannot be queried reliably (rate limiting, pagination, or unexpected responses) | Fail |
@@ -146,7 +155,7 @@ Example failure summary:
 Your team is frozen.
 
 - @octocat belongs to frozen team @DataDog/apm-sdk.
-If your PR is meant to fix the freeze cause, add the relevant label: `ci-remediation`.
+If your PR is meant to fix the freeze cause, add one of these labels: `ci-remediation`.
 ```
 
 ## Protecting the policy files

@@ -19,7 +19,9 @@ export interface Decision {
 export interface DecisionInput {
   frozenTeams: string[]
   bypassLabels: string[]
+  bypassTitlePattern?: string
   prLabels: string[]
+  prTitle?: string
   participants: string[]
   teamMembership: Map<string, Set<string>>
 }
@@ -29,8 +31,42 @@ export function hasBypassLabel(bypassLabels: string[], prLabels: string[]): bool
   return bypassLabels.some((label) => labels.has(label))
 }
 
+export function matchesBypassTitlePattern(bypassTitlePattern: string, prTitle: string): boolean {
+  return new RegExp(bypassTitlePattern).test(prTitle)
+}
+
+// A configured bypass mechanism (label or title pattern) must be satisfied when
+// present; bypass mechanisms that are not configured are treated as satisfied,
+// so a single configured mechanism can bypass on its own, but when several are
+// configured, all of them must be satisfied.
+export function shouldBypass(input: {
+  bypassLabels: string[]
+  bypassTitlePattern: string
+  prLabels: string[]
+  prTitle: string
+}): boolean {
+  const labelsConfigured = input.bypassLabels.length > 0
+  const titlePatternConfigured = input.bypassTitlePattern.length > 0
+
+  if (!labelsConfigured && !titlePatternConfigured) {
+    return false
+  }
+
+  const labelsSatisfied = !labelsConfigured || hasBypassLabel(input.bypassLabels, input.prLabels)
+  const titleSatisfied = !titlePatternConfigured || matchesBypassTitlePattern(input.bypassTitlePattern, input.prTitle)
+
+  return labelsSatisfied && titleSatisfied
+}
+
 export function decide(input: DecisionInput): Decision {
-  if (hasBypassLabel(input.bypassLabels, input.prLabels)) {
+  if (
+    shouldBypass({
+      bypassLabels: input.bypassLabels,
+      bypassTitlePattern: input.bypassTitlePattern ?? '',
+      prLabels: input.prLabels,
+      prTitle: input.prTitle ?? '',
+    })
+  ) {
     return { outcome: 'pass', matchedTeams: [], matches: [] }
   }
 

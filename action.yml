@@ -6,6 +6,10 @@ inputs:
     description: 'Newline-delimited list of labels. Any one present on the pull request satisfies the check when a participant belongs to a frozen team.'
     required: true
     default: ''
+  bypass-title-pattern:
+    description: 'Regular expression the pull request title must match to bypass the check. Empty disables this mechanism. When combined with bypass-labels, both configured conditions must be satisfied.'
+    required: false
+    default: ''
   frozen-teams:
     description: 'Newline-delimited list of frozen GitHub team slugs (e.g. @org/team-slug). An empty list disables the freeze.'
     required: true
@@ -61,5 +65,6 @@ runs:
         # uppercasing an input name to its INPUT_ env var, so this must keep
         # the dash rather than using an underscore.
         INPUT_BYPASS-LABELS: ${{ inputs.bypass-labels }}
+        INPUT_BYPASS-TITLE-PATTERN: ${{ inputs.bypass-title-pattern }}
         INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
         INPUT_FROZEN-MESSAGE: ${{ inputs.frozen-message }}

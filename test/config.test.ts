@@ -13,6 +13,7 @@ describe('parseConfig', () => {
   it('parses valid bypass-labels and frozen-teams lists', () => {
     const result = parseConfig({
       bypassLabels: 'ci-remediation\nhotfix',
+      bypassTitlePattern: '',
       frozenTeams: '@my-org/apm-sdk\n@my-org/profiling',
       frozenMessage,
       repoOwner,
@@ -20,6 +21,7 @@ describe('parseConfig', () => {
 
     expect(result).toEqual({
       bypassLabels: ['ci-remediation', 'hotfix'],
+      bypassTitlePattern: '',
       frozenTeams: ['@my-org/apm-sdk', '@my-org/profiling'],
       frozenMessage,
     })
@@ -28,6 +30,7 @@ describe('parseConfig', () => {
   it('treats an empty frozen-teams list as valid and disabled', () => {
     const result = parseConfig({
       bypassLabels: 'ci-remediation',
+      bypassTitlePattern: '',
       frozenTeams: '',
       frozenMessage,
       repoOwner,
@@ -35,6 +38,7 @@ describe('parseConfig', () => {
 
     expect(result).toEqual({
       bypassLabels: ['ci-remediation'],
+      bypassTitlePattern: '',
       frozenTeams: [],
       frozenMessage,
     })
@@ -43,6 +47,7 @@ describe('parseConfig', () => {
   it('treats an empty bypass-labels list as valid', () => {
     const result = parseConfig({
       bypassLabels: '',
+      bypassTitlePattern: '',
       frozenTeams: '@my-org/apm-sdk',
       frozenMessage,
       repoOwner,
@@ -50,6 +55,7 @@ describe('parseConfig', () => {
 
     expect(result).toEqual({
       bypassLabels: [],
+      bypassTitlePattern: '',
       frozenTeams: ['@my-org/apm-sdk'],
       frozenMessage,
     })
@@ -58,6 +64,7 @@ describe('parseConfig', () => {
   it('ignores blank lines and surrounding whitespace', () => {
     const result = parseConfig({
       bypassLabels: '\n  ci-remediation  \n\n',
+      bypassTitlePattern: '',
       frozenTeams: '\n\n  @my-org/apm-sdk  \n',
       frozenMessage,
       repoOwner,
@@ -65,6 +72,7 @@ describe('parseConfig', () => {
 
     expect(result).toEqual({
       bypassLabels: ['ci-remediation'],
+      bypassTitlePattern: '',
       frozenTeams: ['@my-org/apm-sdk'],
       frozenMessage,
     })
@@ -73,6 +81,7 @@ describe('parseConfig', () => {
   it('deduplicates bypass-labels by exact match only, keeping distinct casings', () => {
     const result = parseConfig({
       bypassLabels: 'ci-remediation\nCI-Remediation\nci-remediation',
+      bypassTitlePattern: '',
       frozenTeams: '',
       frozenMessage,
       repoOwner,
@@ -80,6 +89,7 @@ describe('parseConfig', () => {
 
     expect(result).toEqual({
       bypassLabels: ['ci-remediation', 'CI-Remediation'],
+      bypassTitlePattern: '',
       frozenTeams: [],
       frozenMessage,
     })
@@ -88,6 +98,7 @@ describe('parseConfig', () => {
   it('deduplicates frozen-teams entries', () => {
     const result = parseConfig({
       bypassLabels: '',
+      bypassTitlePattern: '',
       frozenTeams: '@my-org/apm-sdk\n@my-org/apm-sdk',
       frozenMessage,
       repoOwner,
@@ -95,6 +106,7 @@ describe('parseConfig', () => {
 
     expect(result).toEqual({
       bypassLabels: [],
+      bypassTitlePattern: '',
       frozenTeams: ['@my-org/apm-sdk'],
       frozenMessage,
     })
@@ -103,6 +115,7 @@ describe('parseConfig', () => {
   it('uses whatever frozen-message the calling workflow provides, unmodified', () => {
     const result = parseConfig({
       bypassLabels: '',
+      bypassTitlePattern: '',
       frozenTeams: '@my-org/apm-sdk',
       frozenMessage: 'Merges are paused for this team',
       repoOwner,
@@ -110,6 +123,7 @@ describe('parseConfig', () => {
 
     expect(result).toEqual({
       bypassLabels: [],
+      bypassTitlePattern: '',
       frozenTeams: ['@my-org/apm-sdk'],
       frozenMessage: 'Merges are paused for this team',
     })
@@ -118,6 +132,7 @@ describe('parseConfig', () => {
   it('fails closed when bypass-labels is missing (undefined)', () => {
     const result = parseConfig({
       bypassLabels: undefined,
+      bypassTitlePattern: '',
       frozenTeams: '',
       frozenMessage,
       repoOwner,
@@ -126,9 +141,69 @@ describe('parseConfig', () => {
     expect(result).toBeInstanceOf(ConfigError)
   })
 
+  it('fails closed when bypass-title-pattern is missing (undefined)', () => {
+    const result = parseConfig({
+      bypassLabels: '',
+      bypassTitlePattern: undefined,
+      frozenTeams: '',
+      frozenMessage,
+      repoOwner,
+    })
+
+    expect(result).toBeInstanceOf(ConfigError)
+  })
+
+  it('treats an empty bypass-title-pattern as valid and disabled', () => {
+    const result = parseConfig({
+      bypassLabels: '',
+      bypassTitlePattern: '   ',
+      frozenTeams: '@my-org/apm-sdk',
+      frozenMessage,
+      repoOwner,
+    })
+
+    expect(result).toEqual({
+      bypassLabels: [],
+      bypassTitlePattern: '',
+      frozenTeams: ['@my-org/apm-sdk'],
+      frozenMessage,
+    })
+  })
+
+  it('accepts a valid bypass-title-pattern regular expression', () => {
+    const result = parseConfig({
+      bypassLabels: '',
+      bypassTitlePattern: '^\\[hotfix\\]',
+      frozenTeams: '',
+      frozenMessage,
+      repoOwner,
+    })
+
+    expect(result).toEqual({
+      bypassLabels: [],
+      bypassTitlePattern: '^\\[hotfix\\]',
+      frozenTeams: [],
+      frozenMessage,
+    })
+  })
+
+  it('rejects an invalid bypass-title-pattern regular expression', () => {
+    const result = parseConfig({
+      bypassLabels: '',
+      bypassTitlePattern: '[hotfix',
+      frozenTeams: '',
+      frozenMessage,
+      repoOwner,
+    })
+
+    expect(result).toBeInstanceOf(ConfigError)
+    expect((result as ConfigError).message).toContain('[hotfix')
+  })
+
   it('fails closed when frozen-teams is missing (undefined)', () => {
     const result = parseConfig({
       bypassLabels: '',
+      bypassTitlePattern: '',
       frozenTeams: undefined,
       frozenMessage,
       repoOwner,
@@ -140,6 +215,7 @@ describe('parseConfig', () => {
   it('fails closed when frozen-message is missing (undefined)', () => {
     const result = parseConfig({
       bypassLabels: '',
+      bypassTitlePattern: '',
       frozenTeams: '',
       frozenMessage: undefined,
       repoOwner,
@@ -151,6 +227,7 @@ describe('parseConfig', () => {
   it('rejects a display name instead of a team slug', () => {
     const result = parseConfig({
       bypassLabels: '',
+      bypassTitlePattern: '',
       frozenTeams: '@my-org/APM SDK',
       frozenMessage,
       repoOwner,
@@ -163,6 +240,7 @@ describe('parseConfig', () => {
   it('rejects a bare slug with no org', () => {
     const result = parseConfig({
       bypassLabels: '',
+      bypassTitlePattern: '',
       frozenTeams: 'apm-sdk',
       frozenMessage,
       repoOwner,
@@ -174,6 +252,7 @@ describe('parseConfig', () => {
   it('rejects a team from a different organization', () => {
     const result = parseConfig({
       bypassLabels: '',
+      bypassTitlePattern: '',
       frozenTeams: '@other-org/apm-sdk',
       frozenMessage,
       repoOwner,
@@ -187,6 +266,7 @@ describe('parseConfig', () => {
   it('rejects an organization that only differs from the repo owner by case', () => {
     const result = parseConfig({
       bypassLabels: '',
+      bypassTitlePattern: '',
       frozenTeams: '@My-Org/apm-sdk',
       frozenMessage,
       repoOwner,
