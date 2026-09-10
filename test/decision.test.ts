@@ -167,4 +167,56 @@ describe('decide', () => {
 
     expect(result).toEqual({ outcome: 'pass', matchedTeams: [], matches: [] })
   })
+
+  it('passes when only a bypass-title-pattern is configured and the title matches', () => {
+    const result = decide({
+      frozenTeams: ['@org/team-a'],
+      bypassLabels: [],
+      bypassTitlePattern: '^\\[hotfix\\]',
+      prLabels: [],
+      prTitle: '[hotfix] fix the thing',
+      participants: ['alice'],
+      teamMembership: new Map([['@org/team-a', new Set(['alice'])]]),
+    })
+
+    expect(result).toEqual({ outcome: 'pass', matchedTeams: [], matches: [] })
+  })
+
+  it('fails when a bypass-title-pattern is configured but the title does not match', () => {
+    const result = decide({
+      frozenTeams: ['@org/team-a'],
+      bypassLabels: [],
+      bypassTitlePattern: '^\\[hotfix\\]',
+      prLabels: [],
+      prTitle: 'fix the thing',
+      participants: ['alice'],
+      teamMembership: new Map([['@org/team-a', new Set(['alice'])]]),
+    })
+
+    expect(result).toEqual({
+      outcome: 'fail',
+      matchedTeams: ['@org/team-a'],
+      matches: [{ participant: 'alice', team: '@org/team-a' }],
+    })
+  })
+
+  it('requires both the bypass label and the bypass-title-pattern when both are configured', () => {
+    const inputWithOnlyLabel = {
+      frozenTeams: ['@org/team-a'],
+      bypassLabels: ['hotfix'],
+      bypassTitlePattern: '^\\[hotfix\\]',
+      prLabels: ['hotfix'],
+      prTitle: 'fix the thing',
+      participants: ['alice'],
+      teamMembership: new Map([['@org/team-a', new Set(['alice'])]]),
+    }
+
+    expect(decide(inputWithOnlyLabel).outcome).toBe('fail')
+
+    const inputWithOnlyTitle = { ...inputWithOnlyLabel, prLabels: [], prTitle: '[hotfix] fix the thing' }
+    expect(decide(inputWithOnlyTitle).outcome).toBe('fail')
+
+    const inputWithBoth = { ...inputWithOnlyLabel, prTitle: '[hotfix] fix the thing' }
+    expect(decide(inputWithBoth).outcome).toBe('pass')
+  })
 })

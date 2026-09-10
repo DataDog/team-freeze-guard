@@ -49,6 +49,7 @@ function pullRequest(overrides: Partial<PullRequestContext> = {}): PullRequestCo
     authorLogin: 'alice',
     headSha: 'abc123',
     labels: [],
+    title: 'Some PR title',
     ...overrides,
   }
 }
@@ -56,6 +57,7 @@ function pullRequest(overrides: Partial<PullRequestContext> = {}): PullRequestCo
 function baseInput(overrides: Partial<EvaluateInput> = {}): EvaluateInput {
   return {
     bypassLabelsInput: 'ci-remediation',
+    bypassTitlePatternInput: '',
     frozenTeamsInput: '@org/team-a',
     frozenMessageInput: 'Your team is frozen',
     repoOwner: 'org',
@@ -110,7 +112,9 @@ describe('evaluate', () => {
     )
 
     expect(reporter.failures).toEqual([])
-    expect(reporter.infos).toEqual(['A configured bypass label is present; passing without evaluating participants.'])
+    expect(reporter.infos).toEqual([
+      'The configured bypass conditions are satisfied; passing without evaluating participants.',
+    ])
     expect(getCommit).not.toHaveBeenCalled()
     expect(listMembersInOrg).not.toHaveBeenCalled()
   })
@@ -160,7 +164,7 @@ describe('evaluate', () => {
         'Your team is frozen.',
         '',
         '- @bob belongs to frozen team @org/team-a.',
-        'If your PR is meant to fix the freeze cause, add the relevant label: `ci-remediation`.',
+        'If your PR is meant to fix the freeze cause, add one of these labels: `ci-remediation`.',
       ].join('\n'),
     ])
   })
@@ -294,7 +298,7 @@ describe('evaluate', () => {
     expect(reporter.warnings).toContain('Failed to write the job summary: summary API unavailable')
   })
 
-  it('renders a meaningful remediation message when no bypass labels are configured', async () => {
+  it('renders a meaningful remediation message when no bypass mechanisms are configured', async () => {
     const reporter = fakeReporter()
     await evaluate(
       baseInput({
@@ -311,9 +315,52 @@ describe('evaluate', () => {
         'Your team is frozen.',
         '',
         '- @bob belongs to frozen team @org/team-a.',
-        'No bypass labels are configured for this repository; contact an administrator to proceed.',
+        'No bypass mechanism is configured for this repository; contact an administrator to proceed.',
       ].join('\n'),
     ])
+  })
+
+  it('renders a remediation hint that mentions both bypass mechanisms when both are configured', async () => {
+    const reporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        bypassLabelsInput: 'hotfix',
+        bypassTitlePatternInput: '^\\[hotfix\\]',
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.summaries[0]).toContain('add one of these labels: `hotfix`')
+    expect(reporter.summaries[0]).toContain('give the PR a title matching `^\\[hotfix\\]`')
+  })
+
+  it('passes only when both a bypass label and a matching PR title are present, when both are configured', async () => {
+    const reporter = fakeReporter()
+
+    await evaluate(
+      baseInput({
+        bypassLabelsInput: 'hotfix',
+        bypassTitlePatternInput: '^\\[hotfix\\]',
+        pullRequest: pullRequest({ labels: ['hotfix'], title: 'fix the thing' }),
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        reporter,
+      }),
+    )
+    expect(reporter.failures).not.toEqual([])
+
+    const passingReporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        bypassLabelsInput: 'hotfix',
+        bypassTitlePatternInput: '^\\[hotfix\\]',
+        pullRequest: pullRequest({ labels: ['hotfix'], title: '[hotfix] fix the thing' }),
+        reporter: passingReporter,
+      }),
+    )
+    expect(passingReporter.failures).toEqual([])
   })
 
   it('uses the configured frozen-message as the failure reason and summary heading', async () => {
