@@ -153,12 +153,12 @@ function buildBypassConditionLines(config: Config, bypassConditions: BypassCondi
       const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ')
       return condition.satisfied
         ? '- Bypass label: satisfied.'
-        : `- Bypass label: not satisfied — add one of these labels to the pull request: ${labels}.`
+        : `- Bypass label: not satisfied — if your PR is meant to fix the freeze root cause, please add one of these labels: ${labels}.`
     }
 
     return condition.satisfied
       ? '- Bypass title pattern: satisfied.'
-      : `- Bypass title pattern: not satisfied — give the pull request a title matching \`${config.bypassTitlePattern}\`.`
+      : `- Bypass title pattern: not satisfied — if your PR is meant to fix the freeze root cause, please correct the PR title to match \`${config.bypassTitlePattern}\`.`
   })
 }
 
