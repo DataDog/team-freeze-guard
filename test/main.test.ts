@@ -144,7 +144,9 @@ describe('evaluate', () => {
       }),
     )
 
-    expect(reporter.failures).toEqual(['Your team is frozen. - @bob belongs to frozen team @org/team-b.'])
+    expect(reporter.failures).toEqual([
+      'Your team is frozen. - @bob belongs to frozen team @org/team-b. - Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.',
+    ])
     expect(reporter.summaries[0]).toContain('- @bob belongs to frozen team @org/team-b.')
   })
 
@@ -158,13 +160,16 @@ describe('evaluate', () => {
       }),
     )
 
-    expect(reporter.failures).toEqual(['Your team is frozen. - @bob belongs to frozen team @org/team-a.'])
+    expect(reporter.failures).toEqual([
+      'Your team is frozen. - @bob belongs to frozen team @org/team-a. - Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.',
+    ])
     expect(reporter.summaries).toEqual([
       [
         'Your team is frozen.',
         '',
         '- @bob belongs to frozen team @org/team-a.',
-        'If your PR is meant to fix the freeze cause, add one of these labels: `ci-remediation`.',
+        '',
+        '- Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.',
       ].join('\n'),
     ])
   })
@@ -282,7 +287,9 @@ describe('evaluate', () => {
       }),
     )
 
-    expect(reporter.failures).toEqual(['Your team is frozen. - @bob belongs to frozen team @org/team-a.'])
+    expect(reporter.failures).toEqual([
+      'Your team is frozen. - @bob belongs to frozen team @org/team-a. - Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.',
+    ])
     expect(reporter.warnings).toEqual(['Failed to write the job summary: summary API unavailable'])
   })
 
@@ -309,18 +316,21 @@ describe('evaluate', () => {
       }),
     )
 
-    expect(reporter.failures).toEqual(['Your team is frozen. - @bob belongs to frozen team @org/team-a.'])
+    expect(reporter.failures).toEqual([
+      'Your team is frozen. - @bob belongs to frozen team @org/team-a. No bypass mechanism is configured for this repository; contact an administrator to proceed.',
+    ])
     expect(reporter.summaries).toEqual([
       [
         'Your team is frozen.',
         '',
         '- @bob belongs to frozen team @org/team-a.',
+        '',
         'No bypass mechanism is configured for this repository; contact an administrator to proceed.',
       ].join('\n'),
     ])
   })
 
-  it('renders a remediation hint that mentions both bypass mechanisms when both are configured', async () => {
+  it('reports one line per configured bypass mechanism, each with its own result, when neither is satisfied', async () => {
     const reporter = fakeReporter()
     await evaluate(
       baseInput({
@@ -332,8 +342,31 @@ describe('evaluate', () => {
       }),
     )
 
-    expect(reporter.summaries[0]).toContain('add one of these labels: `hotfix`')
-    expect(reporter.summaries[0]).toContain('give the PR a title matching `^\\[hotfix\\]`')
+    expect(reporter.summaries[0]).toContain(
+      '- Bypass label: not satisfied — add one of these labels to the pull request: `hotfix`.',
+    )
+    expect(reporter.summaries[0]).toContain(
+      '- Bypass title pattern: not satisfied — give the pull request a title matching `^\\[hotfix\\]`.',
+    )
+  })
+
+  it('reports a configured bypass mechanism as satisfied even when the overall decision still fails', async () => {
+    const reporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        bypassLabelsInput: 'hotfix',
+        bypassTitlePatternInput: '^\\[hotfix\\]',
+        pullRequest: pullRequest({ labels: ['hotfix'] }),
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.summaries[0]).toContain('- Bypass label: satisfied.')
+    expect(reporter.summaries[0]).toContain(
+      '- Bypass title pattern: not satisfied — give the pull request a title matching `^\\[hotfix\\]`.',
+    )
   })
 
   it('passes only when both a bypass label and a matching PR title are present, when both are configured', async () => {
@@ -374,7 +407,9 @@ describe('evaluate', () => {
       }),
     )
 
-    expect(reporter.failures).toEqual(['Merges are paused while the team is on-call. - @bob belongs to frozen team @org/team-a.'])
+    expect(reporter.failures).toEqual([
+      'Merges are paused while the team is on-call. - @bob belongs to frozen team @org/team-a. - Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.',
+    ])
     expect(reporter.summaries[0]).toContain('Merges are paused while the team is on-call.')
   })
 

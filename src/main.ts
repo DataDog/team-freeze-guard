@@ -6,9 +6,9 @@
 import * as core from '@actions/core'
 import { context, getOctokit } from '@actions/github'
 import { ConfigError, parseConfig } from './config'
-import { decide, shouldBypass } from './decision'
+import { decide, evaluateBypassConditions, shouldBypass } from './decision'
 import type { Config } from './config'
-import type { Decision } from './decision'
+import type { BypassCondition, Decision } from './decision'
 import { resolveParticipants } from './github/participants'
 import { resolveTeamMembership } from './github/teams'
 import { FAIL_CLOSED_MESSAGE, buildReporter, getRequiredEnv, reportFailClosed, safeWriteSummary, type Reporter } from './reporting'
@@ -109,12 +109,24 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     return
   }
 
-  await reportFailure(decision, config, input.reporter)
+  await reportFailure(decision, config, input.pullRequest, input.reporter)
 }
 
-async function reportFailure(decision: Decision, config: Config, reporter: Reporter): Promise<void> {
-  await safeWriteSummary(reporter, buildFailureSummary(decision, config))
-  reporter.setFailed(buildFailureMessage(decision, config))
+async function reportFailure(
+  decision: Decision,
+  config: Config,
+  pullRequest: PullRequestContext,
+  reporter: Reporter,
+): Promise<void> {
+  const bypassConditions = evaluateBypassConditions({
+    bypassLabels: config.bypassLabels,
+    bypassTitlePattern: config.bypassTitlePattern,
+    prLabels: pullRequest.labels,
+    prTitle: pullRequest.title,
+  })
+
+  await safeWriteSummary(reporter, buildFailureSummary(decision, config, bypassConditions))
+  reporter.setFailed(buildFailureMessage(decision, config, bypassConditions))
 }
 
 function buildFailureHeading(config: Config): string {
@@ -125,32 +137,45 @@ function buildMatchLines(decision: Decision): string[] {
   return decision.matches.map((match) => `- @${match.participant} belongs to frozen team ${match.team}.`)
 }
 
-function buildFailureMessage(decision: Decision, config: Config): string {
-  return [buildFailureHeading(config), ...buildMatchLines(decision)].join(' ')
+// Reports the current status of every configured bypass mechanism, one line
+// each, so the reader can see exactly which one(s) are still missing without
+// having to infer it from the overall pass/fail outcome. An unconfigured
+// mechanism does not gate the bypass, so it is omitted rather than reported.
+function buildBypassConditionLines(config: Config, bypassConditions: BypassCondition[]): string[] {
+  const configured = bypassConditions.filter((condition) => condition.configured)
+
+  if (configured.length === 0) {
+    return ['No bypass mechanism is configured for this repository; contact an administrator to proceed.']
+  }
+
+  return configured.map((condition) => {
+    if (condition.mechanism === 'bypass-labels') {
+      const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ')
+      return condition.satisfied
+        ? '- Bypass label: satisfied.'
+        : `- Bypass label: not satisfied — add one of these labels to the pull request: ${labels}.`
+    }
+
+    return condition.satisfied
+      ? '- Bypass title pattern: satisfied.'
+      : `- Bypass title pattern: not satisfied — give the pull request a title matching \`${config.bypassTitlePattern}\`.`
+  })
 }
 
-function buildBypassHints(config: Config): string[] {
-  const hints: string[] = []
-  if (config.bypassLabels.length > 0) {
-    const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ')
-    hints.push(`add one of these labels: ${labels}`)
-  }
-  if (config.bypassTitlePattern.length > 0) {
-    hints.push(`give the PR a title matching \`${config.bypassTitlePattern}\``)
-  }
-  return hints
+function buildFailureMessage(decision: Decision, config: Config, bypassConditions: BypassCondition[]): string {
+  return [buildFailureHeading(config), ...buildMatchLines(decision), ...buildBypassConditionLines(config, bypassConditions)].join(
+    ' ',
+  )
 }
 
-function buildFailureSummary(decision: Decision, config: Config): string {
-  const lines = [buildFailureHeading(config), '', ...buildMatchLines(decision)]
-
-  const hints = buildBypassHints(config)
-  if (hints.length > 0) {
-    // When several bypass mechanisms are configured, all of them must be satisfied (see decision.ts's shouldBypass).
-    lines.push(`If your PR is meant to fix the freeze cause, ${hints.join(', and ')}.`)
-  } else {
-    lines.push('No bypass mechanism is configured for this repository; contact an administrator to proceed.')
-  }
+function buildFailureSummary(decision: Decision, config: Config, bypassConditions: BypassCondition[]): string {
+  const lines = [
+    buildFailureHeading(config),
+    '',
+    ...buildMatchLines(decision),
+    '',
+    ...buildBypassConditionLines(config, bypassConditions),
+  ]
 
   return lines.join('\n')
 }
