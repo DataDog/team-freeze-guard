@@ -31931,6 +31931,7 @@ function parseFrozenTeams(raw, repoOwner) {
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.hasBypassLabel = hasBypassLabel;
 exports.matchesBypassTitlePattern = matchesBypassTitlePattern;
+exports.evaluateBypassConditions = evaluateBypassConditions;
 exports.shouldBypass = shouldBypass;
 exports.decide = decide;
 function hasBypassLabel(bypassLabels, prLabels) {
@@ -31940,19 +31941,31 @@ function hasBypassLabel(bypassLabels, prLabels) {
 function matchesBypassTitlePattern(bypassTitlePattern, prTitle) {
     return new RegExp(bypassTitlePattern).test(prTitle);
 }
+// Evaluates each bypass mechanism independently, so callers can report exactly
+// which configured mechanism(s) are satisfied and which are not.
+function evaluateBypassConditions(input) {
+    const labelsConfigured = input.bypassLabels.length > 0;
+    const titlePatternConfigured = input.bypassTitlePattern.length > 0;
+    return [
+        {
+            mechanism: 'bypass-labels',
+            configured: labelsConfigured,
+            satisfied: !labelsConfigured || hasBypassLabel(input.bypassLabels, input.prLabels),
+        },
+        {
+            mechanism: 'bypass-title-pattern',
+            configured: titlePatternConfigured,
+            satisfied: !titlePatternConfigured || matchesBypassTitlePattern(input.bypassTitlePattern, input.prTitle),
+        },
+    ];
+}
 // A configured bypass mechanism (label or title pattern) must be satisfied when
 // present; bypass mechanisms that are not configured are treated as satisfied,
 // so a single configured mechanism can bypass on its own, but when several are
 // configured, all of them must be satisfied.
 function shouldBypass(input) {
-    const labelsConfigured = input.bypassLabels.length > 0;
-    const titlePatternConfigured = input.bypassTitlePattern.length > 0;
-    if (!labelsConfigured && !titlePatternConfigured) {
-        return false;
-    }
-    const labelsSatisfied = !labelsConfigured || hasBypassLabel(input.bypassLabels, input.prLabels);
-    const titleSatisfied = !titlePatternConfigured || matchesBypassTitlePattern(input.bypassTitlePattern, input.prTitle);
-    return labelsSatisfied && titleSatisfied;
+    const conditions = evaluateBypassConditions(input);
+    return conditions.some((condition) => condition.configured) && conditions.every((condition) => condition.satisfied);
 }
 function decide(input) {
     if (shouldBypass({
@@ -32215,11 +32228,17 @@ async function evaluateOrThrow(input) {
         input.reporter.info('No participant belongs to a frozen team; passing.');
         return;
     }
-    await reportFailure(decision, config, input.reporter);
+    await reportFailure(decision, config, input.pullRequest, input.reporter);
 }
-async function reportFailure(decision, config, reporter) {
-    await (0, reporting_1.safeWriteSummary)(reporter, buildFailureSummary(decision, config));
-    reporter.setFailed(buildFailureMessage(decision, config));
+async function reportFailure(decision, config, pullRequest, reporter) {
+    const bypassConditions = (0, decision_1.evaluateBypassConditions)({
+        bypassLabels: config.bypassLabels,
+        bypassTitlePattern: config.bypassTitlePattern,
+        prLabels: pullRequest.labels,
+        prTitle: pullRequest.title,
+    });
+    await (0, reporting_1.safeWriteSummary)(reporter, buildFailureSummary(decision, config, bypassConditions));
+    reporter.setFailed(buildFailureMessage(decision, config, bypassConditions));
 }
 function buildFailureHeading(config) {
     return /[.!?]$/.test(config.frozenMessage) ? config.frozenMessage : `${config.frozenMessage}.`;
@@ -32227,30 +32246,38 @@ function buildFailureHeading(config) {
 function buildMatchLines(decision) {
     return decision.matches.map((match) => `- @${match.participant} belongs to frozen team ${match.team}.`);
 }
-function buildFailureMessage(decision, config) {
-    return [buildFailureHeading(config), ...buildMatchLines(decision)].join(' ');
+// Reports the current status of every configured bypass mechanism, one line
+// each, so the reader can see exactly which one(s) are still missing without
+// having to infer it from the overall pass/fail outcome. An unconfigured
+// mechanism does not gate the bypass, so it is omitted rather than reported.
+function buildBypassConditionLines(config, bypassConditions) {
+    const configured = bypassConditions.filter((condition) => condition.configured);
+    if (configured.length === 0) {
+        return ['No bypass mechanism is configured for this repository; contact an administrator to proceed.'];
+    }
+    return configured.map((condition) => {
+        if (condition.mechanism === 'bypass-labels') {
+            const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ');
+            return condition.satisfied
+                ? '- Bypass label: satisfied.'
+                : `- Bypass label: not satisfied — add one of these labels to the pull request: ${labels}.`;
+        }
+        return condition.satisfied
+            ? '- Bypass title pattern: satisfied.'
+            : `- Bypass title pattern: not satisfied — give the pull request a title matching \`${config.bypassTitlePattern}\`.`;
+    });
 }
-function buildBypassHints(config) {
-    const hints = [];
-    if (config.bypassLabels.length > 0) {
-        const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ');
-        hints.push(`add one of these labels: ${labels}`);
-    }
-    if (config.bypassTitlePattern.length > 0) {
-        hints.push(`give the PR a title matching \`${config.bypassTitlePattern}\``);
-    }
-    return hints;
+function buildFailureMessage(decision, config, bypassConditions) {
+    return [buildFailureHeading(config), ...buildMatchLines(decision), ...buildBypassConditionLines(config, bypassConditions)].join(' ');
 }
-function buildFailureSummary(decision, config) {
-    const lines = [buildFailureHeading(config), '', ...buildMatchLines(decision)];
-    const hints = buildBypassHints(config);
-    if (hints.length > 0) {
-        // When several bypass mechanisms are configured, all of them must be satisfied (see decision.ts's shouldBypass).
-        lines.push(`If your PR is meant to fix the freeze cause, ${hints.join(', and ')}.`);
-    }
-    else {
-        lines.push('No bypass mechanism is configured for this repository; contact an administrator to proceed.');
-    }
+function buildFailureSummary(decision, config, bypassConditions) {
+    const lines = [
+        buildFailureHeading(config),
+        '',
+        ...buildMatchLines(decision),
+        '',
+        ...buildBypassConditionLines(config, bypassConditions),
+    ];
     return lines.join('\n');
 }
 function run() {
