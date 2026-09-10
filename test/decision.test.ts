@@ -16,7 +16,7 @@ describe('decide', () => {
       teamMembership: new Map([['@org/team-a', new Set(['alice'])]]),
     })
 
-    expect(result).toEqual({ outcome: 'pass', matchedTeams: [] })
+    expect(result).toEqual({ outcome: 'pass', matchedTeams: [], matches: [] })
   })
 
   it('passes when no participant belongs to a frozen team', () => {
@@ -28,7 +28,7 @@ describe('decide', () => {
       teamMembership: new Map([['@org/team-a', new Set(['alice'])]]),
     })
 
-    expect(result).toEqual({ outcome: 'pass', matchedTeams: [] })
+    expect(result).toEqual({ outcome: 'pass', matchedTeams: [], matches: [] })
   })
 
   it('fails when a participant belongs to a frozen team and no bypass label is present', () => {
@@ -40,7 +40,11 @@ describe('decide', () => {
       teamMembership: new Map([['@org/team-a', new Set(['alice'])]]),
     })
 
-    expect(result).toEqual({ outcome: 'fail', matchedTeams: ['@org/team-a'] })
+    expect(result).toEqual({
+      outcome: 'fail',
+      matchedTeams: ['@org/team-a'],
+      matches: [{ participant: 'alice', team: '@org/team-a' }],
+    })
   })
 
   it('passes when a bypass label is present, even with a matching participant', () => {
@@ -52,7 +56,7 @@ describe('decide', () => {
       teamMembership: new Map([['@org/team-a', new Set(['alice'])]]),
     })
 
-    expect(result).toEqual({ outcome: 'pass', matchedTeams: [] })
+    expect(result).toEqual({ outcome: 'pass', matchedTeams: [], matches: [] })
   })
 
   it('does not consult teamMembership at all when a bypass label short-circuits', () => {
@@ -70,7 +74,7 @@ describe('decide', () => {
       teamMembership: poisonedTeamMembership,
     })
 
-    expect(result).toEqual({ outcome: 'pass', matchedTeams: [] })
+    expect(result).toEqual({ outcome: 'pass', matchedTeams: [], matches: [] })
   })
 
   it('requires an exact case match on labels', () => {
@@ -82,7 +86,11 @@ describe('decide', () => {
       teamMembership: new Map([['@org/team-a', new Set(['alice'])]]),
     })
 
-    expect(result).toEqual({ outcome: 'fail', matchedTeams: ['@org/team-a'] })
+    expect(result).toEqual({
+      outcome: 'fail',
+      matchedTeams: ['@org/team-a'],
+      matches: [{ participant: 'alice', team: '@org/team-a' }],
+    })
   })
 
   it('any-matches across multiple bypass labels', () => {
@@ -94,7 +102,7 @@ describe('decide', () => {
       teamMembership: new Map([['@org/team-a', new Set(['alice'])]]),
     })
 
-    expect(result).toEqual({ outcome: 'pass', matchedTeams: [] })
+    expect(result).toEqual({ outcome: 'pass', matchedTeams: [], matches: [] })
   })
 
   it('any-matches across multiple frozen teams, reporting every matched team', () => {
@@ -125,7 +133,11 @@ describe('decide', () => {
       ]),
     })
 
-    expect(result).toEqual({ outcome: 'fail', matchedTeams: ['@org/team-a'] })
+    expect(result).toEqual({
+      outcome: 'fail',
+      matchedTeams: ['@org/team-a'],
+      matches: [{ participant: 'alice', team: '@org/team-a' }],
+    })
   })
 
   it('any-matches across multiple participants against a single team', () => {
@@ -137,7 +149,11 @@ describe('decide', () => {
       teamMembership: new Map([['@org/team-a', new Set(['alice'])]]),
     })
 
-    expect(result).toEqual({ outcome: 'fail', matchedTeams: ['@org/team-a'] })
+    expect(result).toEqual({
+      outcome: 'fail',
+      matchedTeams: ['@org/team-a'],
+      matches: [{ participant: 'alice', team: '@org/team-a' }],
+    })
   })
 
   it('passes when a frozen team has no resolved membership entry', () => {
@@ -149,6 +165,6 @@ describe('decide', () => {
       teamMembership: new Map(),
     })
 
-    expect(result).toEqual({ outcome: 'pass', matchedTeams: [] })
+    expect(result).toEqual({ outcome: 'pass', matchedTeams: [], matches: [] })
   })
 })

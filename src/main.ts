@@ -106,17 +106,13 @@ async function reportFailure(decision: Decision, config: Config, reporter: Repor
 }
 
 function buildFailureSummary(decision: Decision, config: Config): string {
-  const teams = decision.matchedTeams.join(', ')
   const heading = /[.!?]$/.test(config.frozenMessage) ? config.frozenMessage : `${config.frozenMessage}.`
-  const lines = [
-    heading,
-    '',
-    `At least one pull request participant belongs to ${teams}.`,
-  ]
+  const matchLines = decision.matches.map((match) => `- @${match.participant} belongs to frozen team ${match.team}.`)
+  const lines = [heading, '', ...matchLines]
 
   if (config.bypassLabels.length > 0) {
     const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ')
-    lines.push(`Add one of the following labels before merging this pull request: ${labels}.`)
+    lines.push(`If your PR is meant to fix the freeze cause, add the relevant label: ${labels}.`)
   } else {
     lines.push('No bypass labels are configured for this repository; contact an administrator to proceed.')
   }
