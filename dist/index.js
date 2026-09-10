@@ -31842,21 +31842,41 @@ class ConfigError extends Error {
 exports.ConfigError = ConfigError;
 const TEAM_ENTRY_PATTERN = /^@([^/]+)\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/;
 function parseConfig(input) {
-    if (input.bypassLabels === undefined || input.frozenTeams === undefined || input.frozenMessage === undefined) {
-        return new ConfigError('The "bypass-labels", "frozen-teams" and "frozen-message" inputs are required and must be provided by the calling workflow.');
+    if (input.bypassLabels === undefined ||
+        input.bypassTitlePattern === undefined ||
+        input.frozenTeams === undefined ||
+        input.frozenMessage === undefined) {
+        return new ConfigError('The "bypass-labels", "bypass-title-pattern", "frozen-teams" and "frozen-message" inputs are required and must be provided by the calling workflow.');
     }
     const bypassLabels = parseBypassLabels(input.bypassLabels);
+    const bypassTitlePattern = parseBypassTitlePattern(input.bypassTitlePattern);
+    if (bypassTitlePattern instanceof ConfigError) {
+        return bypassTitlePattern;
+    }
     const frozenTeams = parseFrozenTeams(input.frozenTeams, input.repoOwner);
     if (frozenTeams instanceof ConfigError) {
         return frozenTeams;
     }
-    return { bypassLabels, frozenTeams, frozenMessage: input.frozenMessage };
+    return { bypassLabels, bypassTitlePattern, frozenTeams, frozenMessage: input.frozenMessage };
 }
 function splitLines(raw) {
     return raw
         .split('\n')
         .map((line) => line.trim())
         .filter((line) => line.length > 0);
+}
+function parseBypassTitlePattern(raw) {
+    const pattern = raw.trim();
+    if (pattern.length === 0) {
+        return '';
+    }
+    try {
+        new RegExp(pattern);
+    }
+    catch {
+        return new ConfigError(`bypass-title-pattern "${pattern}" is not a valid regular expression.`);
+    }
+    return pattern;
 }
 function parseBypassLabels(raw) {
     const seen = new Set();
@@ -31910,13 +31930,37 @@ function parseFrozenTeams(raw, repoOwner) {
 // Copyright 2026 Datadog, Inc.
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.hasBypassLabel = hasBypassLabel;
+exports.matchesBypassTitlePattern = matchesBypassTitlePattern;
+exports.shouldBypass = shouldBypass;
 exports.decide = decide;
 function hasBypassLabel(bypassLabels, prLabels) {
     const labels = new Set(prLabels);
     return bypassLabels.some((label) => labels.has(label));
 }
+function matchesBypassTitlePattern(bypassTitlePattern, prTitle) {
+    return new RegExp(bypassTitlePattern).test(prTitle);
+}
+// A configured bypass mechanism (label or title pattern) must be satisfied when
+// present; bypass mechanisms that are not configured are treated as satisfied,
+// so a single configured mechanism can bypass on its own, but when several are
+// configured, all of them must be satisfied.
+function shouldBypass(input) {
+    const labelsConfigured = input.bypassLabels.length > 0;
+    const titlePatternConfigured = input.bypassTitlePattern.length > 0;
+    if (!labelsConfigured && !titlePatternConfigured) {
+        return false;
+    }
+    const labelsSatisfied = !labelsConfigured || hasBypassLabel(input.bypassLabels, input.prLabels);
+    const titleSatisfied = !titlePatternConfigured || matchesBypassTitlePattern(input.bypassTitlePattern, input.prTitle);
+    return labelsSatisfied && titleSatisfied;
+}
 function decide(input) {
-    if (hasBypassLabel(input.bypassLabels, input.prLabels)) {
+    if (shouldBypass({
+        bypassLabels: input.bypassLabels,
+        bypassTitlePattern: input.bypassTitlePattern ?? '',
+        prLabels: input.prLabels,
+        prTitle: input.prTitle ?? '',
+    })) {
         return { outcome: 'pass', matchedTeams: [], matches: [] };
     }
     const participants = new Set(input.participants);
@@ -32122,6 +32166,7 @@ async function evaluate(input) {
 async function evaluateOrThrow(input) {
     const config = (0, config_1.parseConfig)({
         bypassLabels: input.bypassLabelsInput,
+        bypassTitlePattern: input.bypassTitlePatternInput,
         frozenTeams: input.frozenTeamsInput,
         frozenMessage: input.frozenMessageInput,
         repoOwner: input.repoOwner,
@@ -32133,8 +32178,13 @@ async function evaluateOrThrow(input) {
     if (!input.pullRequest) {
         throw new Error('This event does not carry a pull request context.');
     }
-    if ((0, decision_1.hasBypassLabel)(config.bypassLabels, input.pullRequest.labels)) {
-        input.reporter.info('A configured bypass label is present; passing without evaluating participants.');
+    if ((0, decision_1.shouldBypass)({
+        bypassLabels: config.bypassLabels,
+        bypassTitlePattern: config.bypassTitlePattern,
+        prLabels: input.pullRequest.labels,
+        prTitle: input.pullRequest.title,
+    })) {
+        input.reporter.info('The configured bypass conditions are satisfied; passing without evaluating participants.');
         return;
     }
     const teamMembership = await (0, teams_1.resolveTeamMembership)({
@@ -32155,7 +32205,9 @@ async function evaluateOrThrow(input) {
     const decision = (0, decision_1.decide)({
         frozenTeams: config.frozenTeams,
         bypassLabels: config.bypassLabels,
+        bypassTitlePattern: config.bypassTitlePattern,
         prLabels: input.pullRequest.labels,
+        prTitle: input.pullRequest.title,
         participants: participants.logins,
         teamMembership,
     });
@@ -32178,14 +32230,26 @@ function buildMatchLines(decision) {
 function buildFailureMessage(decision, config) {
     return [buildFailureHeading(config), ...buildMatchLines(decision)].join(' ');
 }
-function buildFailureSummary(decision, config) {
-    const lines = [buildFailureHeading(config), '', ...buildMatchLines(decision)];
+function buildBypassHints(config) {
+    const hints = [];
     if (config.bypassLabels.length > 0) {
         const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ');
-        lines.push(`If your PR is meant to fix the freeze cause, add the relevant label: ${labels}.`);
+        hints.push(`add one of these labels: ${labels}`);
+    }
+    if (config.bypassTitlePattern.length > 0) {
+        hints.push(`give the PR a title matching \`${config.bypassTitlePattern}\``);
+    }
+    return hints;
+}
+function buildFailureSummary(decision, config) {
+    const lines = [buildFailureHeading(config), '', ...buildMatchLines(decision)];
+    const hints = buildBypassHints(config);
+    if (hints.length > 0) {
+        // When several bypass mechanisms are configured, all of them must be satisfied (see decision.ts's shouldBypass).
+        lines.push(`If your PR is meant to fix the freeze cause, ${hints.join(', and ')}.`);
     }
     else {
-        lines.push('No bypass labels are configured for this repository; contact an administrator to proceed.');
+        lines.push('No bypass mechanism is configured for this repository; contact an administrator to proceed.');
     }
     return lines.join('\n');
 }
@@ -32208,6 +32272,7 @@ async function runWithReporter(reporter) {
 function buildEvaluateInput(reporter) {
     return {
         bypassLabelsInput: core.getInput('bypass-labels'),
+        bypassTitlePatternInput: core.getInput('bypass-title-pattern'),
         frozenTeamsInput: core.getInput('frozen-teams'),
         frozenMessageInput: core.getInput('frozen-message'),
         repoOwner: github_1.context.repo.owner,
@@ -32229,6 +32294,7 @@ function extractPullRequestContext() {
         labels: (pullRequest.labels ?? [])
             .map((label) => label.name)
             .filter((name) => typeof name === 'string'),
+        title: pullRequest.title ?? '',
     };
 }
 if (require.main === require.cache[eval('__filename')]) {

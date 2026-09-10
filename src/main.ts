@@ -6,7 +6,7 @@
 import * as core from '@actions/core'
 import { context, getOctokit } from '@actions/github'
 import { ConfigError, parseConfig } from './config'
-import { decide, hasBypassLabel } from './decision'
+import { decide, shouldBypass } from './decision'
 import type { Config } from './config'
 import type { Decision } from './decision'
 import { resolveParticipants } from './github/participants'
@@ -19,10 +19,12 @@ export interface PullRequestContext {
   authorLogin: string
   headSha: string
   labels: string[]
+  title: string
 }
 
 export interface EvaluateInput {
   bypassLabelsInput: string | undefined
+  bypassTitlePatternInput: string | undefined
   frozenTeamsInput: string | undefined
   frozenMessageInput: string | undefined
   repoOwner: string
@@ -45,6 +47,7 @@ export async function evaluate(input: EvaluateInput): Promise<void> {
 async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
   const config = parseConfig({
     bypassLabels: input.bypassLabelsInput,
+    bypassTitlePattern: input.bypassTitlePatternInput,
     frozenTeams: input.frozenTeamsInput,
     frozenMessage: input.frozenMessageInput,
     repoOwner: input.repoOwner,
@@ -59,8 +62,15 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     throw new Error('This event does not carry a pull request context.')
   }
 
-  if (hasBypassLabel(config.bypassLabels, input.pullRequest.labels)) {
-    input.reporter.info('A configured bypass label is present; passing without evaluating participants.')
+  if (
+    shouldBypass({
+      bypassLabels: config.bypassLabels,
+      bypassTitlePattern: config.bypassTitlePattern,
+      prLabels: input.pullRequest.labels,
+      prTitle: input.pullRequest.title,
+    })
+  ) {
+    input.reporter.info('The configured bypass conditions are satisfied; passing without evaluating participants.')
     return
   }
 
@@ -87,7 +97,9 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
   const decision = decide({
     frozenTeams: config.frozenTeams,
     bypassLabels: config.bypassLabels,
+    bypassTitlePattern: config.bypassTitlePattern,
     prLabels: input.pullRequest.labels,
+    prTitle: input.pullRequest.title,
     participants: participants.logins,
     teamMembership,
   })
@@ -117,14 +129,27 @@ function buildFailureMessage(decision: Decision, config: Config): string {
   return [buildFailureHeading(config), ...buildMatchLines(decision)].join(' ')
 }
 
+function buildBypassHints(config: Config): string[] {
+  const hints: string[] = []
+  if (config.bypassLabels.length > 0) {
+    const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ')
+    hints.push(`add one of these labels: ${labels}`)
+  }
+  if (config.bypassTitlePattern.length > 0) {
+    hints.push(`give the PR a title matching \`${config.bypassTitlePattern}\``)
+  }
+  return hints
+}
+
 function buildFailureSummary(decision: Decision, config: Config): string {
   const lines = [buildFailureHeading(config), '', ...buildMatchLines(decision)]
 
-  if (config.bypassLabels.length > 0) {
-    const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ')
-    lines.push(`If your PR is meant to fix the freeze cause, add the relevant label: ${labels}.`)
+  const hints = buildBypassHints(config)
+  if (hints.length > 0) {
+    // When several bypass mechanisms are configured, all of them must be satisfied (see decision.ts's shouldBypass).
+    lines.push(`If your PR is meant to fix the freeze cause, ${hints.join(', and ')}.`)
   } else {
-    lines.push('No bypass labels are configured for this repository; contact an administrator to proceed.')
+    lines.push('No bypass mechanism is configured for this repository; contact an administrator to proceed.')
   }
 
   return lines.join('\n')
@@ -150,6 +175,7 @@ async function runWithReporter(reporter: Reporter): Promise<void> {
 function buildEvaluateInput(reporter: Reporter): EvaluateInput {
   return {
     bypassLabelsInput: core.getInput('bypass-labels'),
+    bypassTitlePatternInput: core.getInput('bypass-title-pattern'),
     frozenTeamsInput: core.getInput('frozen-teams'),
     frozenMessageInput: core.getInput('frozen-message'),
     repoOwner: context.repo.owner,
@@ -163,7 +189,7 @@ function buildEvaluateInput(reporter: Reporter): EvaluateInput {
 
 function extractPullRequestContext(): PullRequestContext | undefined {
   const pullRequest = context.payload.pull_request as
-    | { user?: { login?: string }; head?: { sha?: string }; labels?: Array<{ name?: string }> }
+    | { user?: { login?: string }; head?: { sha?: string }; labels?: Array<{ name?: string }>; title?: string }
     | undefined
 
   if (!pullRequest?.user?.login || !pullRequest.head?.sha) {
@@ -176,6 +202,7 @@ function extractPullRequestContext(): PullRequestContext | undefined {
     labels: (pullRequest.labels ?? [])
       .map((label) => label.name)
       .filter((name): name is string => typeof name === 'string'),
+    title: pullRequest.title ?? '',
   }
 }
 

@@ -4,7 +4,22 @@ name: Team freeze guard (e2e)
 #
 # 1. no frozen team -> PASS
 # 2. a random frozen team -> PASS
-# 3. apm-reliability-and-performance (repo owner, so very likely a contributing team) is frozen team, but bypass label is present -> PASS
+#
+# apm-reliability-and-performance (repo owner, so very likely a contributing
+# team) is used as the frozen team for every scenario below, combining the two
+# bypass mechanisms (bypass-labels, bypass-title-pattern):
+#
+# 3. bypass label only, present            -> PASS
+# 4. bypass label only, absent             -> FAIL
+# 5. bypass title pattern only, matching   -> PASS
+# 6. bypass title pattern only, mismatched -> FAIL
+# 7. both configured, both satisfied       -> PASS
+# 8. both configured, only one satisfied   -> FAIL
+# 9. neither configured                    -> FAIL
+#
+# The `team-freeze-guard` label is expected to already be applied to the
+# `e2e-tests` PR; ".*" always matches the real PR title, while the
+# "^this-will-never-match-a-real-pr-title$" pattern is chosen to never match it.
 #
 # Uses `pull_request_target` (required for octo-sts's trust policy) with a
 # checkout so `uses: ./` has something to resolve against — with no `ref:`
@@ -19,6 +34,7 @@ on:
       - labeled
       - unlabeled
       - ready_for_review
+      - edited
 
 permissions:
   id-token: write
@@ -43,26 +59,104 @@ jobs:
           bypass-labels: not-a-real-label
           frozen-teams: |
             @DataDog/paintfooding
-      - name: Real contributor team
+
+      # --- Frozen team, bypass label only ---
+
+      - name: Frozen team, bypass label present -> pass
         uses: ./
         with:
           bypass-labels: |
             team-freeze-guard
           frozen-teams: |
             @DataDog/apm-reliability-and-performance
-      - name: Real contributor team, and it should fail
-        id: should-fail
+
+      - name: Frozen team, bypass label absent -> fail
+        id: should-fail-label-absent
+        continue-on-error: true
+        uses: ./
+        with:
+          bypass-labels: not-a-real-label
+          frozen-teams: |
+            @DataDog/apm-reliability-and-performance
+          frozen-message: |
+            This test is expected to fail (no bypass label present)
+            If you're seing this message, it means all good!
+      - name: Check that "bypass label absent" failed as expected
+        if: steps.should-fail-label-absent.outcome != 'failure'
+        run: |
+          echo "Expected 'Frozen team, bypass label absent -> fail' to fail, but it did not (outcome: ${{ steps.should-fail-label-absent.outcome }})."
+          exit 1
+
+      # --- Frozen team, bypass title pattern only ---
+
+      - name: Frozen team, PR title matches bypass pattern -> pass
+        uses: ./
+        with:
+          bypass-title-pattern: ".*"
+          frozen-teams: |
+            @DataDog/apm-reliability-and-performance
+
+      - name: Frozen team, PR title does not match bypass pattern -> fail
+        id: should-fail-title-mismatch
+        continue-on-error: true
+        uses: ./
+        with:
+          bypass-title-pattern: "^this-will-never-match-a-real-pr-title$"
+          frozen-teams: |
+            @DataDog/apm-reliability-and-performance
+          frozen-message: |
+            This test is expected to fail (PR title does not match the bypass pattern)
+            If you're seing this message, it means all good!
+      - name: Check that "PR title does not match bypass pattern" failed as expected
+        if: steps.should-fail-title-mismatch.outcome != 'failure'
+        run: |
+          echo "Expected 'Frozen team, PR title does not match bypass pattern -> fail' to fail, but it did not (outcome: ${{ steps.should-fail-title-mismatch.outcome }})."
+          exit 1
+
+      # --- Frozen team, both bypass mechanisms configured ---
+
+      - name: Frozen team, bypass label present and title matches -> pass
+        uses: ./
+        with:
+          bypass-labels: |
+            team-freeze-guard
+          bypass-title-pattern: ".*"
+          frozen-teams: |
+            @DataDog/apm-reliability-and-performance
+
+      - name: Frozen team, bypass label present but title does not match -> fail
+        id: should-fail-only-one-satisfied
+        continue-on-error: true
+        uses: ./
+        with:
+          bypass-labels: |
+            team-freeze-guard
+          bypass-title-pattern: "^this-will-never-match-a-real-pr-title$"
+          frozen-teams: |
+            @DataDog/apm-reliability-and-performance
+          frozen-message: |
+            This test is expected to fail (only one of the two configured bypass conditions is satisfied)
+            If you're seing this message, it means all good!
+      - name: Check that "only one of two configured bypass conditions satisfied" failed as expected
+        if: steps.should-fail-only-one-satisfied.outcome != 'failure'
+        run: |
+          echo "Expected 'Frozen team, bypass label present but title does not match -> fail' to fail, but it did not (outcome: ${{ steps.should-fail-only-one-satisfied.outcome }})."
+          exit 1
+
+      # --- Frozen team, no bypass mechanism configured ---
+
+      - name: Frozen team, no bypass mechanism configured -> fail
+        id: should-fail-no-bypass
         continue-on-error: true
         uses: ./
         with:
           frozen-teams: |
             @DataDog/apm-reliability-and-performance
           frozen-message: |
-            This test is expected to fail
+            This test is expected to fail (no bypass mechanism configured)
             If you're seing this message, it means all good!
-
-      - name: Check that the previous step failed as expected
-        if: steps.should-fail.outcome != 'failure'
+      - name: Check that "no bypass mechanism configured" failed as expected
+        if: steps.should-fail-no-bypass.outcome != 'failure'
         run: |
-          echo "Expected 'Real contributor team, and it should fail' to fail, but it did not (outcome: ${{ steps.should-fail.outcome }})."
+          echo "Expected 'Frozen team, no bypass mechanism configured -> fail' to fail, but it did not (outcome: ${{ steps.should-fail-no-bypass.outcome }})."
           exit 1

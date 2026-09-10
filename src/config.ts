@@ -5,6 +5,7 @@
 
 export interface Config {
   bypassLabels: string[]
+  bypassTitlePattern: string
   frozenTeams: string[]
   frozenMessage: string
 }
@@ -18,6 +19,7 @@ export class ConfigError extends Error {
 
 export interface ParseConfigInput {
   bypassLabels: string | undefined
+  bypassTitlePattern: string | undefined
   frozenTeams: string | undefined
   frozenMessage: string | undefined
   repoOwner: string
@@ -26,19 +28,29 @@ export interface ParseConfigInput {
 const TEAM_ENTRY_PATTERN = /^@([^/]+)\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/
 
 export function parseConfig(input: ParseConfigInput): Config | ConfigError {
-  if (input.bypassLabels === undefined || input.frozenTeams === undefined || input.frozenMessage === undefined) {
+  if (
+    input.bypassLabels === undefined ||
+    input.bypassTitlePattern === undefined ||
+    input.frozenTeams === undefined ||
+    input.frozenMessage === undefined
+  ) {
     return new ConfigError(
-      'The "bypass-labels", "frozen-teams" and "frozen-message" inputs are required and must be provided by the calling workflow.',
+      'The "bypass-labels", "bypass-title-pattern", "frozen-teams" and "frozen-message" inputs are required and must be provided by the calling workflow.',
     )
   }
 
   const bypassLabels = parseBypassLabels(input.bypassLabels)
+  const bypassTitlePattern = parseBypassTitlePattern(input.bypassTitlePattern)
+  if (bypassTitlePattern instanceof ConfigError) {
+    return bypassTitlePattern
+  }
+
   const frozenTeams = parseFrozenTeams(input.frozenTeams, input.repoOwner)
   if (frozenTeams instanceof ConfigError) {
     return frozenTeams
   }
 
-  return { bypassLabels, frozenTeams, frozenMessage: input.frozenMessage }
+  return { bypassLabels, bypassTitlePattern, frozenTeams, frozenMessage: input.frozenMessage }
 }
 
 function splitLines(raw: string): string[] {
@@ -46,6 +58,21 @@ function splitLines(raw: string): string[] {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.length > 0)
+}
+
+function parseBypassTitlePattern(raw: string): string | ConfigError {
+  const pattern = raw.trim()
+  if (pattern.length === 0) {
+    return ''
+  }
+
+  try {
+    new RegExp(pattern)
+  } catch {
+    return new ConfigError(`bypass-title-pattern "${pattern}" is not a valid regular expression.`)
+  }
+
+  return pattern
 }
 
 function parseBypassLabels(raw: string): string[] {
