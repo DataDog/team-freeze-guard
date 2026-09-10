@@ -12,10 +12,23 @@ For every relevant pull request event, the action evaluates this rule:
 
 ```mermaid
 flowchart TD
-    A["Is any team frozen?"] -->|No| PASS1["Pass"]
-    A -->|Yes| B["Are all configured bypass conditions satisfied?<br/>(bypass label present, PR title matches pattern)"]
-    B -->|Yes| PASS2["Pass"]
-    B -->|No| C["Is a participant member of a frozen team?"]
+    A{"Is any team frozen?"} -->|No| PASS1["Pass"]
+    A -->|Yes| L{"bypass-labels configured?"}
+
+    L -->|No| LOK(("Label condition: satisfied"))
+    L -->|Yes| L2{"Bypass label present on PR?"}
+    L2 -->|Yes| LOK
+    L2 -->|No| NOBYPASS["A configured bypass<br/>condition is not satisfied"]
+
+    LOK --> T{"bypass-title-pattern configured?"}
+    T -->|No| TOK(("Title condition: satisfied"))
+    T -->|Yes| T2{"PR title matches pattern?"}
+    T2 -->|Yes| TOK
+    T2 -->|No| NOBYPASS
+
+    TOK --> PASS2["Pass<br/>(every configured bypass condition satisfied)"]
+
+    NOBYPASS --> C{"Is a participant member of a frozen team?"}
     C -->|No| PASS3["Pass"]
     C -->|Yes| FAIL["Fail"]
 ```
