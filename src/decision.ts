@@ -5,9 +5,15 @@
 
 export type DecisionOutcome = 'pass' | 'fail'
 
+export interface Match {
+  participant: string
+  team: string
+}
+
 export interface Decision {
   outcome: DecisionOutcome
   matchedTeams: string[]
+  matches: Match[]
 }
 
 export interface DecisionInput {
@@ -25,26 +31,29 @@ export function hasBypassLabel(bypassLabels: string[], prLabels: string[]): bool
 
 export function decide(input: DecisionInput): Decision {
   if (hasBypassLabel(input.bypassLabels, input.prLabels)) {
-    return { outcome: 'pass', matchedTeams: [] }
+    return { outcome: 'pass', matchedTeams: [], matches: [] }
   }
 
   const participants = new Set(input.participants)
+  const matches: Match[] = []
   const matchedTeams = input.frozenTeams.filter((team) => {
     const members = input.teamMembership.get(team)
     if (!members) {
       return false
     }
+    let matched = false
     for (const participant of participants) {
       if (members.has(participant)) {
-        return true
+        matches.push({ participant, team })
+        matched = true
       }
     }
-    return false
+    return matched
   })
 
   if (matchedTeams.length === 0) {
-    return { outcome: 'pass', matchedTeams: [] }
+    return { outcome: 'pass', matchedTeams: [], matches: [] }
   }
 
-  return { outcome: 'fail', matchedTeams }
+  return { outcome: 'fail', matchedTeams, matches }
 }

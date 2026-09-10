@@ -141,7 +141,7 @@ describe('evaluate', () => {
     )
 
     expect(reporter.failures).toEqual(['Your team is frozen'])
-    expect(reporter.summaries[0]).toContain('At least one pull request participant belongs to @org/team-b.')
+    expect(reporter.summaries[0]).toContain('- @bob belongs to frozen team @org/team-b.')
   })
 
   it('fails with a job summary matching the documented format when a participant belongs to a frozen team', async () => {
@@ -159,7 +159,7 @@ describe('evaluate', () => {
       [
         'Your team is frozen.',
         '',
-        'At least one pull request participant belongs to @org/team-a.',
+        '- @bob belongs to frozen team @org/team-a.',
         'Add one of the following labels before merging this pull request: `ci-remediation`.',
       ].join('\n'),
     ])
@@ -310,7 +310,7 @@ describe('evaluate', () => {
       [
         'Your team is frozen.',
         '',
-        'At least one pull request participant belongs to @org/team-a.',
+        '- @bob belongs to frozen team @org/team-a.',
         'No bypass labels are configured for this repository; contact an administrator to proceed.',
       ].join('\n'),
     ])

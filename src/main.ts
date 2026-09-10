@@ -106,13 +106,9 @@ async function reportFailure(decision: Decision, config: Config, reporter: Repor
 }
 
 function buildFailureSummary(decision: Decision, config: Config): string {
-  const teams = decision.matchedTeams.join(', ')
   const heading = /[.!?]$/.test(config.frozenMessage) ? config.frozenMessage : `${config.frozenMessage}.`
-  const lines = [
-    heading,
-    '',
-    `At least one pull request participant belongs to ${teams}.`,
-  ]
+  const matchLines = decision.matches.map((match) => `- @${match.participant} belongs to frozen team ${match.team}.`)
+  const lines = [heading, '', ...matchLines]
 
   if (config.bypassLabels.length > 0) {
     const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ')
