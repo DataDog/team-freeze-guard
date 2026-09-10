@@ -50,3 +50,10 @@ jobs:
             team-freeze-guard
           frozen-teams: |
             @DataDog/apm-reliability-and-performance
+      - name: Real contributor team, and it should fail
+        uses: ./
+        with:
+          frozen-teams: |
+            @DataDog/apm-reliability-and-performance
+          frozen-message: |
+            This test is expected to fail
