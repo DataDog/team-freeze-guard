@@ -109,7 +109,7 @@ An empty `frozen-teams` values means that no check is performed (no code freeze)
 
 | Field | Required | Default | Description |
 | --- | --- | --- | --- |
-| `bypass-labels` | Yes | None | Newline-delimited list of labels; any one present satisfies this bypass mechanism when a participant belongs to a frozen team. Matching is case-sensitive. |
+| `bypass-labels` | No | None (disabled) | Newline-delimited list of labels; any one present satisfies this bypass mechanism when a participant belongs to a frozen team. Empty disables it. Matching is case-sensitive. |
 | `bypass-title-pattern` | No | None (disabled) | Regular expression the pull request title must match to satisfy this bypass mechanism. Empty disables it. When combined with `bypass-labels`, both configured mechanisms must be satisfied. |
 | `frozen-teams` | Yes | None | Newline-delimited list of frozen GitHub team slugs. An empty list disables all freezes. |
 | `frozen-message` | No | `Your team is frozen` | Message used as the check failure reason and summary heading when a frozen team participates. |
