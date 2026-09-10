@@ -140,7 +140,7 @@ describe('evaluate', () => {
       }),
     )
 
-    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.failures).toEqual(['Your team is frozen. - @bob belongs to frozen team @org/team-b.'])
     expect(reporter.summaries[0]).toContain('- @bob belongs to frozen team @org/team-b.')
   })
 
@@ -154,7 +154,7 @@ describe('evaluate', () => {
       }),
     )
 
-    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.failures).toEqual(['Your team is frozen. - @bob belongs to frozen team @org/team-a.'])
     expect(reporter.summaries).toEqual([
       [
         'Your team is frozen.',
@@ -278,7 +278,7 @@ describe('evaluate', () => {
       }),
     )
 
-    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.failures).toEqual(['Your team is frozen. - @bob belongs to frozen team @org/team-a.'])
     expect(reporter.warnings).toEqual(['Failed to write the job summary: summary API unavailable'])
   })
 
@@ -305,7 +305,7 @@ describe('evaluate', () => {
       }),
     )
 
-    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.failures).toEqual(['Your team is frozen. - @bob belongs to frozen team @org/team-a.'])
     expect(reporter.summaries).toEqual([
       [
         'Your team is frozen.',
@@ -327,7 +327,7 @@ describe('evaluate', () => {
       }),
     )
 
-    expect(reporter.failures).toEqual(['Merges are paused while the team is on-call'])
+    expect(reporter.failures).toEqual(['Merges are paused while the team is on-call. - @bob belongs to frozen team @org/team-a.'])
     expect(reporter.summaries[0]).toContain('Merges are paused while the team is on-call.')
   })
 
