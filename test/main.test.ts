@@ -145,7 +145,7 @@ describe('evaluate', () => {
     )
 
     expect(reporter.failures).toEqual([
-      'Your team is frozen. - @bob belongs to frozen team @org/team-b. - Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.',
+      'Your team is frozen. - @bob belongs to frozen team @org/team-b. - Bypass label: not satisfied — if your PR is meant to fix the freeze root cause, please add one of these labels: `ci-remediation`.',
     ])
     expect(reporter.summaries[0]).toContain('- @bob belongs to frozen team @org/team-b.')
   })
@@ -161,7 +161,7 @@ describe('evaluate', () => {
     )
 
     expect(reporter.failures).toEqual([
-      'Your team is frozen. - @bob belongs to frozen team @org/team-a. - Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.',
+      'Your team is frozen. - @bob belongs to frozen team @org/team-a. - Bypass label: not satisfied — if your PR is meant to fix the freeze root cause, please add one of these labels: `ci-remediation`.',
     ])
     expect(reporter.summaries).toEqual([
       [
@@ -169,7 +169,7 @@ describe('evaluate', () => {
         '',
         '- @bob belongs to frozen team @org/team-a.',
         '',
-        '- Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.',
+        '- Bypass label: not satisfied — if your PR is meant to fix the freeze root cause, please add one of these labels: `ci-remediation`.',
       ].join('\n'),
     ])
   })
@@ -288,7 +288,7 @@ describe('evaluate', () => {
     )
 
     expect(reporter.failures).toEqual([
-      'Your team is frozen. - @bob belongs to frozen team @org/team-a. - Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.',
+      'Your team is frozen. - @bob belongs to frozen team @org/team-a. - Bypass label: not satisfied — if your PR is meant to fix the freeze root cause, please add one of these labels: `ci-remediation`.',
     ])
     expect(reporter.warnings).toEqual(['Failed to write the job summary: summary API unavailable'])
   })
@@ -343,10 +343,10 @@ describe('evaluate', () => {
     )
 
     expect(reporter.summaries[0]).toContain(
-      '- Bypass label: not satisfied — add one of these labels to the pull request: `hotfix`.',
+      '- Bypass label: not satisfied — if your PR is meant to fix the freeze root cause, please add one of these labels: `hotfix`.',
     )
     expect(reporter.summaries[0]).toContain(
-      '- Bypass title pattern: not satisfied — give the pull request a title matching `^\\[hotfix\\]`.',
+      '- Bypass title pattern: not satisfied — if your PR is meant to fix the freeze root cause, please correct the PR title to match `^\\[hotfix\\]`.',
     )
   })
 
@@ -365,7 +365,7 @@ describe('evaluate', () => {
 
     expect(reporter.summaries[0]).toContain('- Bypass label: satisfied.')
     expect(reporter.summaries[0]).toContain(
-      '- Bypass title pattern: not satisfied — give the pull request a title matching `^\\[hotfix\\]`.',
+      '- Bypass title pattern: not satisfied — if your PR is meant to fix the freeze root cause, please correct the PR title to match `^\\[hotfix\\]`.',
     )
   })
 
@@ -408,7 +408,7 @@ describe('evaluate', () => {
     )
 
     expect(reporter.failures).toEqual([
-      'Merges are paused while the team is on-call. - @bob belongs to frozen team @org/team-a. - Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.',
+      'Merges are paused while the team is on-call. - @bob belongs to frozen team @org/team-a. - Bypass label: not satisfied — if your PR is meant to fix the freeze root cause, please add one of these labels: `ci-remediation`.',
     ])
     expect(reporter.summaries[0]).toContain('Merges are paused while the team is on-call.')
   })
