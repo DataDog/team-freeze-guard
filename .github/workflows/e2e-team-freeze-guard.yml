@@ -51,9 +51,18 @@ jobs:
           frozen-teams: |
             @DataDog/apm-reliability-and-performance
       - name: Real contributor team, and it should fail
+        id: should-fail
+        continue-on-error: true
         uses: ./
         with:
           frozen-teams: |
             @DataDog/apm-reliability-and-performance
           frozen-message: |
             This test is expected to fail
+            If you're seing this message, it means all good!
+
+      - name: Check that the previous step failed as expected
+        if: steps.should-fail.outcome != 'failure'
+        run: |
+          echo "Expected 'Real contributor team, and it should fail' to fail, but it did not (outcome: ${{ steps.should-fail.outcome }})."
+          exit 1

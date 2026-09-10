@@ -31917,25 +31917,28 @@ function hasBypassLabel(bypassLabels, prLabels) {
 }
 function decide(input) {
     if (hasBypassLabel(input.bypassLabels, input.prLabels)) {
-        return { outcome: 'pass', matchedTeams: [] };
+        return { outcome: 'pass', matchedTeams: [], matches: [] };
     }
     const participants = new Set(input.participants);
+    const matches = [];
     const matchedTeams = input.frozenTeams.filter((team) => {
         const members = input.teamMembership.get(team);
         if (!members) {
             return false;
         }
+        let matched = false;
         for (const participant of participants) {
             if (members.has(participant)) {
-                return true;
+                matches.push({ participant, team });
+                matched = true;
             }
         }
-        return false;
+        return matched;
     });
     if (matchedTeams.length === 0) {
-        return { outcome: 'pass', matchedTeams: [] };
+        return { outcome: 'pass', matchedTeams: [], matches: [] };
     }
-    return { outcome: 'fail', matchedTeams };
+    return { outcome: 'fail', matchedTeams, matches };
 }
 
 
@@ -32167,16 +32170,12 @@ async function reportFailure(decision, config, reporter) {
     reporter.setFailed(config.frozenMessage);
 }
 function buildFailureSummary(decision, config) {
-    const teams = decision.matchedTeams.join(', ');
     const heading = /[.!?]$/.test(config.frozenMessage) ? config.frozenMessage : `${config.frozenMessage}.`;
-    const lines = [
-        heading,
-        '',
-        `At least one pull request participant belongs to ${teams}.`,
-    ];
+    const matchLines = decision.matches.map((match) => `- @${match.participant} belongs to frozen team ${match.team}.`);
+    const lines = [heading, '', ...matchLines];
     if (config.bypassLabels.length > 0) {
         const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ');
-        lines.push(`Add one of the following labels before merging this pull request: ${labels}.`);
+        lines.push(`If your PR is meant to fix the freeze cause, add the relevant label: ${labels}.`);
     }
     else {
         lines.push('No bypass labels are configured for this repository; contact an administrator to proceed.');
