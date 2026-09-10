@@ -32167,12 +32167,19 @@ async function evaluateOrThrow(input) {
 }
 async function reportFailure(decision, config, reporter) {
     await (0, reporting_1.safeWriteSummary)(reporter, buildFailureSummary(decision, config));
-    reporter.setFailed(config.frozenMessage);
+    reporter.setFailed(buildFailureMessage(decision, config));
+}
+function buildFailureHeading(config) {
+    return /[.!?]$/.test(config.frozenMessage) ? config.frozenMessage : `${config.frozenMessage}.`;
+}
+function buildMatchLines(decision) {
+    return decision.matches.map((match) => `- @${match.participant} belongs to frozen team ${match.team}.`);
+}
+function buildFailureMessage(decision, config) {
+    return [buildFailureHeading(config), ...buildMatchLines(decision)].join(' ');
 }
 function buildFailureSummary(decision, config) {
-    const heading = /[.!?]$/.test(config.frozenMessage) ? config.frozenMessage : `${config.frozenMessage}.`;
-    const matchLines = decision.matches.map((match) => `- @${match.participant} belongs to frozen team ${match.team}.`);
-    const lines = [heading, '', ...matchLines];
+    const lines = [buildFailureHeading(config), '', ...buildMatchLines(decision)];
     if (config.bypassLabels.length > 0) {
         const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ');
         lines.push(`If your PR is meant to fix the freeze cause, add the relevant label: ${labels}.`);
