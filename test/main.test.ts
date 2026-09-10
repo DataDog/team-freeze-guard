@@ -1,6 +1,11 @@
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+
 import { describe, expect, it, vi } from 'vitest'
 import { evaluate, type EvaluateInput, type PullRequestContext } from '../src/main'
-import type { Reporter } from '../src/reporting'
+import { FAIL_CLOSED_MESSAGE, type Reporter } from '../src/reporting'
 
 function fakeReporter(): Reporter & { summaries: string[]; failures: string[]; infos: string[]; warnings: string[] } {
   const summaries: string[] = []
@@ -52,6 +57,7 @@ function baseInput(overrides: Partial<EvaluateInput> = {}): EvaluateInput {
   return {
     bypassLabelsInput: 'ci-remediation',
     frozenTeamsInput: '@org/team-a',
+    frozenMessageInput: 'Your team is frozen',
     repoOwner: 'org',
     repoName: 'repo',
     pullRequest: pullRequest(),
@@ -76,7 +82,7 @@ describe('evaluate', () => {
     const reporter = fakeReporter()
     await evaluate(baseInput({ pullRequest: undefined, reporter }))
 
-    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.failures).toEqual([FAIL_CLOSED_MESSAGE])
     expect(reporter.summaries).toHaveLength(1)
     expect(reporter.summaries[0]).toContain('could not be evaluated safely')
   })
@@ -192,7 +198,7 @@ describe('evaluate', () => {
 
     await evaluate(baseInput({ orgOctokit, reporter }))
 
-    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.failures).toEqual([FAIL_CLOSED_MESSAGE])
     expect(reporter.summaries[0]).toContain('could not be evaluated safely')
   })
 
@@ -210,7 +216,7 @@ describe('evaluate', () => {
 
     await evaluate(baseInput({ octokit, reporter }))
 
-    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.failures).toEqual([FAIL_CLOSED_MESSAGE])
     expect(reporter.summaries[0]).toContain('could not be evaluated safely')
   })
 
@@ -245,7 +251,7 @@ describe('evaluate', () => {
 
     await evaluate(baseInput({ octokit, reporter }))
 
-    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.failures).toEqual([FAIL_CLOSED_MESSAGE])
     expect(reporter.warnings).toEqual([JSON.stringify({ status: 404, message: 'Not Found' })])
   })
 
@@ -284,7 +290,7 @@ describe('evaluate', () => {
 
     await evaluate(baseInput({ pullRequest: undefined, reporter }))
 
-    expect(reporter.failures).toEqual(['Your team is frozen'])
+    expect(reporter.failures).toEqual([FAIL_CLOSED_MESSAGE])
     expect(reporter.warnings).toContain('Failed to write the job summary: summary API unavailable')
   })
 
@@ -308,5 +314,34 @@ describe('evaluate', () => {
         'No bypass labels are configured for this repository; contact an administrator to proceed.',
       ].join('\n'),
     ])
+  })
+
+  it('uses the configured frozen-message as the failure reason and summary heading', async () => {
+    const reporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        frozenMessageInput: 'Merges are paused while the team is on-call',
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.failures).toEqual(['Merges are paused while the team is on-call'])
+    expect(reporter.summaries[0]).toContain('Merges are paused while the team is on-call.')
+  })
+
+  it('does not double punctuation when the configured frozen-message already ends with it', async () => {
+    const reporter = fakeReporter()
+    await evaluate(
+      baseInput({
+        frozenMessageInput: 'Merges are paused!',
+        octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
+        orgOctokit: fakeOrgOctokit({ 'team-a': [{ login: 'bob' }] }),
+        reporter,
+      }),
+    )
+
+    expect(reporter.summaries[0]?.split('\n')[0]).toBe('Merges are paused!')
   })
 })
