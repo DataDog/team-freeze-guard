@@ -146,7 +146,7 @@ Example failure summary:
 Your team is frozen.
 
 - @octocat belongs to frozen team @DataDog/apm-sdk.
-Add one of the following labels before merging this pull request: `ci-remediation`.
+If your PR is meant to fix the freeze cause, add the relevant label: `ci-remediation`.
 ```
 
 ## Protecting the policy files
