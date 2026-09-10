@@ -159,7 +159,7 @@ Your team is frozen.
 
 - @octocat belongs to frozen team @DataDog/apm-sdk.
 
-- Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.
+- Bypass label: not satisfied — if your PR is meant to fix the freeze root cause, please add one of these labels: `ci-remediation`.
 ```
 
 Each configured bypass mechanism gets its own line, reporting whether it is satisfied and, if not, what is required to satisfy it — for example, with both mechanisms configured and only the title pattern satisfied:
@@ -169,7 +169,7 @@ Your team is frozen.
 
 - @octocat belongs to frozen team @DataDog/apm-sdk.
 
-- Bypass label: not satisfied — add one of these labels to the pull request: `ci-remediation`.
+- Bypass label: not satisfied — if your PR is meant to fix the freeze root cause, please add one of these labels: `ci-remediation`.
 - Bypass title pattern: satisfied.
 ```
 
