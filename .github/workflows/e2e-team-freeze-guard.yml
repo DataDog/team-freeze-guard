@@ -1,6 +1,6 @@
 name: Team freeze guard (e2e)
 
-# Dogfood check, run manually against a PR branch `e2e-tests`
+# Dogfood check, run against a PR branch `e2e-tests`
 #
 # 1. no frozen team -> PASS
 # 2. a random frozen team -> PASS
@@ -21,7 +21,7 @@ name: Team freeze guard (e2e)
 # `e2e-tests` PR; ".*" always matches the real PR title, while the
 # "^this-will-never-match-a-real-pr-title$" pattern is chosen to never match it.
 #
-# Uses `pull_request_target` (required for octo-sts's trust policy) with a
+# Uses `pull_request_target` with a
 # checkout so `uses: ./` has something to resolve against — with no `ref:`
 # override, that checkout pulls `main`, so this always tests main's already-
 # merged action code, not this PR's own diff.
@@ -35,16 +35,25 @@ on:
       - unlabeled
       - ready_for_review
       - edited
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/e2e-team-freeze-guard.yml
+  schedule:
+    - cron: '37 * * * *'
+  workflow_dispatch:
 
-permissions:
-  id-token: write
-  contents: read
+permissions: {}
 
 jobs:
   team-freeze-guard-e2e:
     name: Team freeze guard (e2e)
     runs-on: ubuntu-latest
-    if: github.head_ref == 'e2e-tests'
+    if: github.event_name != 'pull_request_target' || github.head_ref == 'e2e-tests'
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -71,6 +80,7 @@ jobs:
             @DataDog/apm-reliability-and-performance
 
       - name: Frozen team, bypass label absent -> fail
+        if: github.event_name == 'pull_request_target'
         id: should-fail-label-absent
         continue-on-error: true
         uses: ./
@@ -82,7 +92,9 @@ jobs:
             This test is expected to fail (no bypass label present)
             If you're seing this message, it means all good!
       - name: Check that "bypass label absent" failed as expected
-        if: steps.should-fail-label-absent.outcome != 'failure'
+        if: >-
+          github.event_name == 'pull_request_target' &&
+          steps.should-fail-label-absent.outcome != 'failure'
         run: |
           echo "Expected 'Frozen team, bypass label absent -> fail' to fail, but it did not (outcome: ${{ steps.should-fail-label-absent.outcome }})."
           exit 1
@@ -90,6 +102,7 @@ jobs:
       # --- Frozen team, bypass title pattern only ---
 
       - name: Frozen team, PR title matches bypass pattern -> pass
+        if: github.event_name == 'pull_request_target'
         uses: ./
         with:
           bypass-title-pattern: ".*"
@@ -97,6 +110,7 @@ jobs:
             @DataDog/apm-reliability-and-performance
 
       - name: Frozen team, PR title does not match bypass pattern -> fail
+        if: github.event_name == 'pull_request_target'
         id: should-fail-title-mismatch
         continue-on-error: true
         uses: ./
@@ -108,7 +122,9 @@ jobs:
             This test is expected to fail (PR title does not match the bypass pattern)
             If you're seing this message, it means all good!
       - name: Check that "PR title does not match bypass pattern" failed as expected
-        if: steps.should-fail-title-mismatch.outcome != 'failure'
+        if: >-
+          github.event_name == 'pull_request_target' &&
+          steps.should-fail-title-mismatch.outcome != 'failure'
         run: |
           echo "Expected 'Frozen team, PR title does not match bypass pattern -> fail' to fail, but it did not (outcome: ${{ steps.should-fail-title-mismatch.outcome }})."
           exit 1
@@ -116,6 +132,7 @@ jobs:
       # --- Frozen team, both bypass mechanisms configured ---
 
       - name: Frozen team, bypass label present and title matches -> pass
+        if: github.event_name == 'pull_request_target'
         uses: ./
         with:
           bypass-labels: |
@@ -125,6 +142,7 @@ jobs:
             @DataDog/apm-reliability-and-performance
 
       - name: Frozen team, bypass label present but title does not match -> fail
+        if: github.event_name == 'pull_request_target'
         id: should-fail-only-one-satisfied
         continue-on-error: true
         uses: ./
@@ -138,7 +156,9 @@ jobs:
             This test is expected to fail (only one of the two configured bypass conditions is satisfied)
             If you're seing this message, it means all good!
       - name: Check that "only one of two configured bypass conditions satisfied" failed as expected
-        if: steps.should-fail-only-one-satisfied.outcome != 'failure'
+        if: >-
+          github.event_name == 'pull_request_target' &&
+          steps.should-fail-only-one-satisfied.outcome != 'failure'
         run: |
           echo "Expected 'Frozen team, bypass label present but title does not match -> fail' to fail, but it did not (outcome: ${{ steps.should-fail-only-one-satisfied.outcome }})."
           exit 1
@@ -146,6 +166,7 @@ jobs:
       # --- Frozen team, no bypass mechanism configured ---
 
       - name: Frozen team, no bypass mechanism configured -> fail
+        if: github.event_name == 'pull_request_target'
         id: should-fail-no-bypass
         continue-on-error: true
         uses: ./
@@ -156,7 +177,9 @@ jobs:
             This test is expected to fail (no bypass mechanism configured)
             If you're seing this message, it means all good!
       - name: Check that "no bypass mechanism configured" failed as expected
-        if: steps.should-fail-no-bypass.outcome != 'failure'
+        if: >-
+          github.event_name == 'pull_request_target' &&
+          steps.should-fail-no-bypass.outcome != 'failure'
         run: |
           echo "Expected 'Frozen team, no bypass mechanism configured -> fail' to fail, but it did not (outcome: ${{ steps.should-fail-no-bypass.outcome }})."
           exit 1
