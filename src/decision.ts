@@ -102,7 +102,7 @@ export function decide(input: DecisionInput): Decision {
     }
     let matched = false
     for (const participant of participants) {
-      if (members.has(participant)) {
+      if (members.has(participant.toLowerCase())) {
         matches.push({ participant, team })
         matched = true
       }

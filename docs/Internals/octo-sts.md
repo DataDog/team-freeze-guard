@@ -1,23 +1,30 @@
 
 ## Octo STS trust policy
 
-The action internally requests an organization-scoped token from `dd-octo-sts-action`, which is internal to DataDog. As a direct consequence, this GitHub Action won't work on any repository other than DataDog's.
+Only trusted `push`, `schedule`, and `workflow_dispatch` runs request an organization-scoped
+token from `dd-octo-sts-action`, which is internal to DataDog. As a direct consequence, this
+GitHub Action won't work on any repository other than DataDog's.
 
 The corresponding trust policy must:
 
-- Trust the calling repository and its protected workflow context.
+- Trust path-filtered pushes, scheduled runs, and manual dispatches on each calling
+  repository's default branch.
 - Grant only the GitHub organization `Members: read` permission.
 - Be stored in the canonical organization trust-policy location.
 
-The real policy is published org-wide in `DataDog/.github` at `.github/chainguard/team-freeze-guard.read-org-members.sts.yaml` (added in [DataDog/.github#457](https://github.com/DataDog/.github/pull/457)), referenced from `action.yml` as `scope: DataDog`, `policy: team-freeze-guard.read-org-members`:
+The existing policy is published org-wide in `DataDog/.github` at
+`.github/chainguard/team-freeze-guard.read-org-members.sts.yaml`, and is referenced from
+`action.yml` as `scope: DataDog`, `policy: team-freeze-guard.read-org-members`. It cannot
+live in a consuming repository because `Members: read` is an organization-scoped
+permission. Its abbreviated shape is:
 
 ```yaml
 issuer: https://token.actions.githubusercontent.com
 
-subject_pattern: repo:DataDog/(dd-trace-js:ref:refs/heads/master|system-tests:ref:refs/heads/main|team-freeze-guard:ref:refs/heads/main)
+subject_pattern: repo:DataDog/(dd-trace-js|system-tests|team-freeze-guard):(pull_request|ref:refs/heads/(main|master))
 
 claim_pattern:
-  event_name: pull_request_target
+  event_name: (pull_request_target|push|schedule|workflow_dispatch)
   ref: refs/heads/(main|master)
   repository: DataDog/(dd-trace-js|system-tests|team-freeze-guard)
 
@@ -25,6 +32,12 @@ permissions:
   members: read
 ```
 
-`team-freeze-guard` is a reusable composite action meant to be adopted by many repos, but this policy only authorizes the specific repos it lists, added as they onboard — the OIDC identity for a caller invoking this action reflects the *caller's* repo, not `team-freeze-guard`'s, so broadening this to match any DataDog repo is a deliberate decision to avoid (requiring explicit confirmation per the dd-octo-sts guide's guardrails on broad patterns), not something to guess at preemptively. `subject_pattern` pairs each onboarded repo with its own default branch explicitly (`main` vs. `master`) rather than a flat cross product of repos and branches, which would otherwise also wrongly accept, e.g., `system-tests` on `master`. Add further repos (and their branch) to `subject_pattern` and `claim_pattern.repository` as they onboard.
+`team-freeze-guard` is a reusable composite action meant to be adopted by many repos, but
+this policy only authorizes the specific repos it lists, added as they onboard. The OIDC
+identity reflects the *caller's* repo, not `team-freeze-guard`'s, so broadening this to match
+any DataDog repo is a deliberate decision to avoid. Add further repos to `subject_pattern`
+and `claim_pattern.repository` as they onboard. The `pull_request_target` authorization is
+retained for compatibility with older action versions that request the token while
+evaluating a pull request.
 
 The underlying Octo STS GitHub App installation must itself have `Members: read`; a trust policy cannot grant permissions that the App does not possess.

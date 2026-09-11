@@ -1,66 +1,92 @@
 name: 'Team freeze guard'
-description: 'Blocks pull requests from frozen GitHub teams unless a configured bypass label is present.'
+description: 'Blocks pull requests authored by frozen GitHub teams unless configured bypass conditions are satisfied.'
 
 inputs:
   bypass-labels:
-    description: 'Newline-delimited list of labels. Any one present on the pull request satisfies this bypass mechanism when a participant belongs to a frozen team. Empty disables this mechanism.'
+    description: >-
+      Newline-delimited list of labels. Any one present satisfies this bypass
+      mechanism for a frozen pull request author. Empty disables this mechanism.
     required: false
     default: ''
   bypass-title-pattern:
-    description: 'Regular expression the pull request title must match to bypass the check. Empty disables this mechanism. When combined with bypass-labels, both configured conditions must be satisfied.'
+    description: >-
+      Regular expression the pull request title must match to bypass the check.
+      Empty disables this mechanism. When combined with bypass-labels, both
+      configured conditions must be satisfied.
     required: false
     default: ''
   frozen-teams:
-    description: 'Newline-delimited list of frozen GitHub team slugs (e.g. @org/team-slug). An empty list disables the freeze.'
+    description: >-
+      Newline-delimited list of frozen GitHub team slugs (e.g. @org/team-slug).
+      An empty list disables the freeze.
     required: true
     # Intentionally invalid: a caller that forgets to pass this
     # input must fail closed (ConfigError), not be silently treated the same
     # as a caller who explicitly disables the freeze with frozen-teams: ''.
     default: '__frozen-teams-not-set__'
   frozen-message:
-    description: 'Message used as the check failure reason and summary heading when a frozen team participates.'
+    description: >-
+      Message used as the check failure reason and summary heading when the
+      author belongs to a frozen team.
     required: false
     default: 'Your team is frozen'
 
 runs:
   using: 'composite'
   steps:
-    # frozen-teams is empty-like makes the outcome a foregone pass without needing any external call
-    - name: Early checks (skip when the freeze is disabled)
+    - name: Prepare team membership cache
       id: early-checks
       shell: python
       env:
+        EVENT_NAME: ${{ github.event_name }}
         FROZEN_TEAMS: ${{ inputs.frozen-teams }}
       run: |
+        import hashlib
         import os
 
-        frozen_teams_empty = not any(line.strip() for line in os.environ["FROZEN_TEAMS"].splitlines())
+        event_name = os.environ["EVENT_NAME"]
+        if event_name == "pull_request_target":
+            operation = "evaluate"
+        elif event_name in ("push", "schedule", "workflow_dispatch"):
+            operation = "refresh"
+        else:
+            raise SystemExit(
+                "team-freeze-guard only supports pull_request_target, push, "
+                "schedule, and workflow_dispatch events"
+            )
 
-        if frozen_teams_empty:
-            print("No frozen teams configured; passing without evaluating participants.")
+        teams = sorted(
+            line.strip().lower()
+            for line in os.environ["FROZEN_TEAMS"].splitlines()
+            if line.strip()
+        )
+        digest = hashlib.sha256("\n".join(teams).encode()).hexdigest()
+        prefix = f"team-freeze-guard-membership-v1-{digest}"
 
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"skip={'true' if frozen_teams_empty else 'false'}\n")
+            f.write(f"operation={operation}\n")
+            f.write(f"skip={'true' if not teams else 'false'}\n")
+            f.write(f"cache-key-prefix={prefix}\n")
 
-    # Trust policy: DataDog/.github/.github/chainguard/team-freeze-guard.read-org-members.sts.yaml
-    # (see docs/Internals/octo-sts.md). The org scope and policy are intentionally
-    # not exposed as repository inputs (see README's "Required workflow permissions"
-    # section), so this is hardcoded here rather than configurable per caller.
-    - name: Exchange OIDC identity for an org-scoped GitHub token
-      id: octo-sts
-      if: steps.early-checks.outputs.skip != 'true'
-      uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+    - name: Restore frozen team membership
+      if: >-
+        steps.early-checks.outputs.operation == 'evaluate' &&
+        steps.early-checks.outputs.skip != 'true'
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
-        scope: DataDog
-        policy: team-freeze-guard.read-org-members
+        path: ${{ runner.temp }}/${{ steps.early-checks.outputs.cache-key-prefix }}.json
+        key: ${{ steps.early-checks.outputs.cache-key-prefix }}-lookup-${{ github.run_id }}
+        restore-keys: |
+          ${{ steps.early-checks.outputs.cache-key-prefix }}-
 
     - name: Evaluate team freeze policy
-      if: steps.early-checks.outputs.skip != 'true'
+      if: >-
+        steps.early-checks.outputs.operation == 'evaluate' &&
+        steps.early-checks.outputs.skip != 'true'
       shell: bash
       run: node "${{ github.action_path }}/dist/index.js"
       env:
-        GITHUB_TOKEN: ${{ github.token }}
-        ORG_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        TEAM_MEMBERSHIP_FILE: ${{ runner.temp }}/${{ steps.early-checks.outputs.cache-key-prefix }}.json
         # @actions/core's getInput() only replaces spaces (not dashes) before
         # uppercasing an input name to its INPUT_ env var, so this must keep
         # the dash rather than using an underscore.
@@ -68,3 +94,37 @@ runs:
         INPUT_BYPASS-TITLE-PATTERN: ${{ inputs.bypass-title-pattern }}
         INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
         INPUT_FROZEN-MESSAGE: ${{ inputs.frozen-message }}
+
+    # Trust policy:
+    # DataDog/.github/.github/chainguard/team-freeze-guard.read-org-members.sts.yaml
+    # (see docs/Internals/octo-sts.md).
+    - name: Exchange OIDC identity for an org-scoped GitHub token
+      id: octo-sts
+      if: >-
+        steps.early-checks.outputs.operation == 'refresh' &&
+        steps.early-checks.outputs.skip != 'true'
+      uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
+      with:
+        scope: DataDog
+        policy: team-freeze-guard.read-org-members
+
+    - name: Refresh frozen team membership
+      if: >-
+        steps.early-checks.outputs.operation == 'refresh' &&
+        steps.early-checks.outputs.skip != 'true'
+      shell: bash
+      run: node "${{ github.action_path }}/dist/index.js"
+      env:
+        TEAM_FREEZE_GUARD_MODE: refresh
+        ORG_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
+        TEAM_MEMBERSHIP_FILE: ${{ runner.temp }}/${{ steps.early-checks.outputs.cache-key-prefix }}.json
+
+    - name: Save frozen team membership
+      if: >-
+        steps.early-checks.outputs.operation == 'refresh' &&
+        steps.early-checks.outputs.skip != 'true'
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ runner.temp }}/${{ steps.early-checks.outputs.cache-key-prefix }}.json
+        key: ${{ steps.early-checks.outputs.cache-key-prefix }}-refresh-${{ github.run_id }}-${{ github.run_attempt }}

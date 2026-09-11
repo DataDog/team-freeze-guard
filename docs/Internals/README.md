@@ -2,15 +2,15 @@
 
 ## Team membership resolution
 
-For each configured frozen team, the evaluator lists active team members using the organization-scoped Octo STS token and intersects that set with the pull request participant set.
+The trusted refresh operation uses the organization-scoped Octo STS token to cache active members for every configured frozen team. The pull request evaluator reads that snapshot and checks the author.
 
 Listing each team's members is preferred over querying every participant against every team:
 
 - The number of frozen teams is expected to be small.
-- It avoids `participants × teams` API requests on pull requests with many commits.
+- GraphQL aliases normally fetch all configured teams in one request.
 - It makes it straightforward to report which frozen teams matched.
 
-All paginated results must be consumed. Nested-team membership follows the behavior of GitHub's team-members API.
+Each team requests up to 100 members. Additional GraphQL requests are made only for teams that require another page. Nested-team membership follows GitHub's GraphQL team-membership behavior.
 
 Unknown teams, inaccessible teams, incomplete pagination, rate limiting, and unexpected API responses are policy-evaluation errors and therefore fail the check.
 
@@ -20,7 +20,7 @@ The action, across `action.yml` and the evaluator (`dist/index.js`) it invokes, 
 
 ```text
 if frozen-teams is empty:
-    pass                                    # action.yml, before the evaluator ever runs
+    pass
 
 load and validate trusted repository configuration
 
@@ -28,25 +28,24 @@ if every configured bypass mechanism is satisfied
 (bypass-labels: any entry present; bypass-title-pattern: PR title matches):
     pass
 
-collect PR author and the GitHub-linked committer of the current head commit
-resolve the active members of every frozen team
-find intersections between participants and frozen teams
+load and validate the cached team-membership snapshot
+check the pull request author against every frozen team
 
-if there are no intersections:
+if the author belongs to no frozen team:
     pass
 
 fail with "Your team is frozen"
 ```
 
-The bypass check runs before team-membership resolution so that a pull request satisfying every configured bypass mechanism never triggers the participant and team-membership API calls: fewer API calls means a faster check and less exposure to transient GitHub/Octo STS infrastructure errors, which fail closed per the Failure policy below. This check (`shouldBypass` in `src/decision.ts`) stays inside the evaluator rather than moving to `action.yml`, so it still runs after the Octo STS exchange below.
+The bypass check runs before reading the membership snapshot. Pull request evaluation makes no GitHub API or Octo STS calls.
 
-The `frozen-teams`-empty short circuit is stricter than that: it must skip **every** external call, not just the participant and team-membership API calls made from within the evaluator. In particular, the Octo STS token exchange in `action.yml` is itself an external call (one request to Octo STS, distinct from the one-request-per-frozen-team calls made during team-membership resolution) and must not run when `frozen-teams` is empty. `action.yml` enforces this directly, before the evaluator (`dist/index.js`) is ever invoked, via a `shell: python` step, "Early checks," that produces a `skip` output the Octo STS step and the step that invokes `dist/index.js` are both conditioned on:
+The `frozen-teams`-empty short circuit skips cache access, token exchange, and the evaluator. `action.yml` enforces it before either operation.
 
 `frozen-teams` is empty once blank lines are stripped. `inputs.frozen-teams != ''` alone isn't enough here, since a whitespace-only or newline-only value (e.g. `"\n \n"`) is also "no frozen teams" as far as `src/config.ts`'s own parsing would treat it, but isn't the literal `''` string — this step normalizes the same way `splitLines` in `src/config.ts` does before comparing. The `"not set"` sentinel default is deliberately **not** treated as empty here, so an omitted input still reaches `dist/index.js` and fails closed.
 
-This means an empty (or whitespace-only) `frozen-teams` configuration makes zero external calls — no Octo STS exchange, no `dist/index.js` invocation at all — while a satisfied bypass on an otherwise-frozen pull request still costs the Octo STS exchange (needed to fail closed on a malformed config) before `shouldBypass` short-circuits the rest of the evaluator.
+This means an empty (or whitespace-only) `frozen-teams` configuration makes no external calls.
 
-The policy uses **any-match semantics** for participants and within `bypass-labels`: one frozen participant is enough to require a bypass, and any one of the configured `bypass-labels` is enough to satisfy that mechanism. Across mechanisms, semantics are **all-match**: when both `bypass-labels` and `bypass-title-pattern` are configured, both must be satisfied — a bypass label alone, or a matching title alone, does not pass. A mechanism left unconfigured (empty) is treated as satisfied, so a single configured mechanism can bypass on its own. The participant any-match prevents a frozen engineer from bypassing the policy by opening a pull request through another author or committing directly to an existing pull request. It does not prevent a frozen engineer from asking a teammate to both open the pull request and commit on their behalf — see the "Commit authorship is not checked" limitation in `docs/limitations.md`.
+The policy uses **any-match semantics** within teams and `bypass-labels`: author membership in one frozen team is enough to require a bypass, and any configured label is enough to satisfy the label mechanism. Across mechanisms, semantics are **all-match**: when both `bypass-labels` and `bypass-title-pattern` are configured, both must be satisfied. Accountability is intentionally based only on the pull request author.
 
 ## Check reporting
 
@@ -69,13 +68,13 @@ The action should avoid exposing unnecessary organization membership information
 The action fails closed for:
 
 - Missing or invalid configuration.
-- Octo STS token exchange failures.
-- GitHub API authentication or authorization failures.
+- Missing, stale, or inconsistent membership snapshots.
+- Refresh-time Octo STS or GitHub API failures.
 - Unknown or inaccessible configured teams.
 - Pagination or rate-limit failures.
 - Unexpected or incomplete API responses.
 
-A temporary dependency failure may therefore block merging. This is intentional: inability to determine whether a participant is frozen must not silently authorize the merge. Operational bypasses should be explicit, limited, and auditable through the ruleset bypass process.
+A temporary dependency failure may therefore block merging. This is intentional: inability to determine whether the author is frozen must not silently authorize the merge. Operational bypasses should be explicit, limited, and auditable through the ruleset bypass process.
 
 ## Event coverage
 
@@ -85,7 +84,7 @@ The workflow reacts to:
 | --- | --- |
 | `opened` | Initial evaluation. |
 | `reopened` | Re-evaluate a reopened pull request. |
-| `synchronize` | Re-evaluate authors and committers after commits change. |
+| `synchronize` | Report the result for the pull request's new head SHA. |
 | `labeled` | Permit the pull request when a configured bypass label is added. |
 | `unlabeled` | Block the pull request if the last matching bypass label is removed. |
 | `ready_for_review` | Evaluate a draft when it becomes reviewable. |

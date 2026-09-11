@@ -31985,7 +31985,7 @@ function decide(input) {
         }
         let matched = false;
         for (const participant of participants) {
-            if (members.has(participant)) {
+            if (members.has(participant.toLowerCase())) {
                 matches.push({ participant, team });
                 matched = true;
             }
@@ -31996,47 +31996,6 @@ function decide(input) {
         return { outcome: 'pass', matchedTeams: [], matches: [] };
     }
     return { outcome: 'fail', matchedTeams, matches };
-}
-
-
-/***/ }),
-
-/***/ 8317:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-// Unless explicitly stated otherwise all files in this repository are licensed
-// under the Apache License Version 2.0.
-// This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2026 Datadog, Inc.
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.resolveParticipants = resolveParticipants;
-async function resolveParticipants(input) {
-    const logins = new Set([input.prAuthorLogin]);
-    const unmappedIdentities = new Set();
-    const { data: commit } = await input.octokit.rest.repos.getCommit({
-        owner: input.owner,
-        repo: input.repo,
-        ref: input.headSha,
-    });
-    recordIdentity(commit.committer?.login ?? null, formatUnmappedIdentity(commit.commit.committer?.name, commit.commit.committer?.email), logins, unmappedIdentities);
-    return { logins: [...logins], unmappedIdentities: [...unmappedIdentities] };
-}
-function formatUnmappedIdentity(name, email) {
-    if (!name) {
-        return null;
-    }
-    return email ? `${name} <${email}>` : name;
-}
-function recordIdentity(login, unmappedIdentity, logins, unmappedIdentities) {
-    if (login) {
-        logins.add(login);
-        return;
-    }
-    if (unmappedIdentity) {
-        unmappedIdentities.add(unmappedIdentity);
-    }
 }
 
 
@@ -32063,10 +32022,51 @@ class TeamResolutionError extends Error {
 exports.TeamResolutionError = TeamResolutionError;
 const TEAM_HANDLE_PATTERN = /^@([^/]+)\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/;
 async function resolveTeamMembership(input) {
-    const membership = new Map();
-    for (const teamHandle of input.teamHandles) {
-        const teamSlug = extractTeamSlug(teamHandle, input.org);
-        membership.set(teamHandle, await listTeamMembers(input.octokit, input.org, teamHandle, teamSlug));
+    const membership = new Map(input.teamHandles.map((handle) => [handle, new Set()]));
+    let pending = input.teamHandles.map((handle) => ({
+        handle,
+        slug: extractTeamSlug(handle, input.org),
+        cursor: null,
+    }));
+    while (pending.length > 0) {
+        const { query, variables } = buildQuery(input.org, pending);
+        let result;
+        try {
+            result = await input.octokit.graphql(query, variables);
+        }
+        catch (error) {
+            throw new TeamResolutionError('Failed to resolve frozen team membership.', {
+                cause: error,
+            });
+        }
+        if (!result.organization) {
+            throw new TeamResolutionError(`Organization "${input.org}" is unknown or inaccessible.`);
+        }
+        const nextPage = [];
+        pending.forEach((team, index) => {
+            const teamResult = result.organization?.[`team${index}`];
+            if (!teamResult) {
+                throw new TeamResolutionError(`Team "${team.handle}" is unknown or inaccessible.`);
+            }
+            const members = membership.get(team.handle);
+            if (!members || !Array.isArray(teamResult.members?.nodes)) {
+                throw new TeamResolutionError(`Team "${team.handle}" returned an unexpected response.`);
+            }
+            for (const member of teamResult.members.nodes) {
+                if (!member || typeof member.login !== 'string' || member.login.length === 0) {
+                    throw new TeamResolutionError(`Team "${team.handle}" returned an invalid member.`);
+                }
+                members.add(member.login.toLowerCase());
+            }
+            if (teamResult.members.pageInfo.hasNextPage) {
+                const cursor = teamResult.members.pageInfo.endCursor;
+                if (!cursor) {
+                    throw new TeamResolutionError(`Team "${team.handle}" returned incomplete pagination data.`);
+                }
+                nextPage.push({ ...team, cursor });
+            }
+        });
+        pending = nextPage;
     }
     return membership;
 }
@@ -32077,40 +32077,33 @@ function extractTeamSlug(teamHandle, org) {
     }
     const [, handleOrg, slug] = match;
     if (handleOrg !== org) {
-        throw new TeamResolutionError(`"${teamHandle}" belongs to organization "${handleOrg}", but team membership is being resolved for organization "${org}".`);
+        throw new TeamResolutionError(`"${teamHandle}" belongs to organization "${handleOrg}", but membership is being resolved for "${org}".`);
     }
     return slug;
 }
-async function listTeamMembers(octokit, org, teamHandle, teamSlug) {
-    try {
-        const members = await octokit.paginate(octokit.rest.teams.listMembersInOrg, {
-            org,
-            team_slug: teamSlug,
-            per_page: 100,
-        });
-        return new Set(members.map((member) => member.login));
-    }
-    catch (error) {
-        const status = getHttpStatus(error);
-        if (status === 404) {
-            throw new TeamResolutionError(`Team "${teamHandle}" is unknown.`, { cause: error });
+function buildQuery(org, teams) {
+    const definitions = ['$org: String!'];
+    const selections = [];
+    const variables = { org };
+    teams.forEach((team, index) => {
+        definitions.push(`$slug${index}: String!`, `$cursor${index}: String`);
+        variables[`slug${index}`] = team.slug;
+        variables[`cursor${index}`] = team.cursor;
+        selections.push(`
+      team${index}: team(slug: $slug${index}) {
+        members(first: 100, after: $cursor${index}, membership: ALL) {
+          nodes { login }
+          pageInfo { endCursor hasNextPage }
         }
-        if (status === 403) {
-            throw new TeamResolutionError(`Team "${teamHandle}" is inaccessible with the current token.`, {
-                cause: error,
-            });
-        }
-        throw new TeamResolutionError(`Failed to resolve members of team "${teamHandle}".`, {
-            cause: error,
-        });
-    }
-}
-function getHttpStatus(error) {
-    if (typeof error === 'object' && error !== null && 'status' in error) {
-        const { status } = error;
-        return typeof status === 'number' ? status : null;
-    }
-    return null;
+      }`);
+    });
+    return {
+        query: `query TeamFreezeGuardMembership(${definitions.join(', ')}) {
+      organization(login: $org) {${selections.join('')}
+      }
+    }`,
+        variables,
+    };
 }
 
 
@@ -32160,13 +32153,16 @@ var __importStar = (this && this.__importStar) || (function () {
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.evaluate = evaluate;
+exports.refreshMembership = refreshMembership;
 exports.run = run;
+exports.runRefresh = runRefresh;
+const node_fs_1 = __nccwpck_require__(3024);
 const core = __importStar(__nccwpck_require__(7484));
 const github_1 = __nccwpck_require__(3228);
 const config_1 = __nccwpck_require__(2973);
 const decision_1 = __nccwpck_require__(7033);
-const participants_1 = __nccwpck_require__(8317);
 const teams_1 = __nccwpck_require__(4769);
+const membership_cache_1 = __nccwpck_require__(7416);
 const reporting_1 = __nccwpck_require__(9953);
 async function evaluate(input) {
     try {
@@ -32188,6 +32184,10 @@ async function evaluateOrThrow(input) {
         input.reporter.setFailed(config.message);
         return;
     }
+    if (config.frozenTeams.length === 0) {
+        input.reporter.info('No frozen teams configured; passing.');
+        return;
+    }
     if (!input.pullRequest) {
         throw new Error('This event does not carry a pull request context.');
     }
@@ -32197,38 +32197,47 @@ async function evaluateOrThrow(input) {
         prLabels: input.pullRequest.labels,
         prTitle: input.pullRequest.title,
     })) {
-        input.reporter.info('The configured bypass conditions are satisfied; passing without evaluating participants.');
+        input.reporter.info('The configured bypass conditions are satisfied; passing without evaluating the pull request author.');
         return;
     }
-    const teamMembership = await (0, teams_1.resolveTeamMembership)({
-        octokit: input.orgOctokit,
-        org: input.repoOwner,
-        teamHandles: config.frozenTeams,
-    });
-    const participants = await (0, participants_1.resolveParticipants)({
-        octokit: input.octokit,
-        owner: input.repoOwner,
-        repo: input.repoName,
-        headSha: input.pullRequest.headSha,
-        prAuthorLogin: input.pullRequest.authorLogin,
-    });
-    for (const identity of participants.unmappedIdentities) {
-        input.reporter.warning(`Could not map commit identity "${identity}" to a GitHub account; it was not checked against frozen teams.`);
-    }
+    const teamMembership = (0, membership_cache_1.parseMembershipSnapshot)(input.readMembershipSnapshot(), config.frozenTeams, input.now);
     const decision = (0, decision_1.decide)({
         frozenTeams: config.frozenTeams,
         bypassLabels: config.bypassLabels,
         bypassTitlePattern: config.bypassTitlePattern,
         prLabels: input.pullRequest.labels,
         prTitle: input.pullRequest.title,
-        participants: participants.logins,
+        participants: [input.pullRequest.authorLogin],
         teamMembership,
     });
     if (decision.outcome === 'pass') {
-        input.reporter.info('No participant belongs to a frozen team; passing.');
+        input.reporter.info('The pull request author does not belong to a frozen team; passing.');
         return;
     }
     await reportFailure(decision, config, input.pullRequest, input.reporter);
+}
+async function refreshMembership(input) {
+    try {
+        const frozenTeams = (0, config_1.parseFrozenTeamsInput)(input.frozenTeamsInput, input.repoOwner);
+        if (frozenTeams instanceof config_1.ConfigError) {
+            input.reporter.setFailed(frozenTeams.message);
+            return;
+        }
+        if (frozenTeams.length === 0) {
+            input.reporter.info('No frozen teams configured; no membership cache is needed.');
+            return;
+        }
+        const membership = await (0, teams_1.resolveTeamMembership)({
+            octokit: input.orgOctokit,
+            org: input.repoOwner,
+            teamHandles: frozenTeams,
+        });
+        input.writeSnapshot((0, membership_cache_1.serializeMembershipSnapshot)(membership, input.generatedAt));
+        input.reporter.info(`Resolved and cached membership for ${String(frozenTeams.length)} team(s).`);
+    }
+    catch (error) {
+        await (0, reporting_1.reportFailClosed)(input.reporter, error);
+    }
 }
 async function reportFailure(decision, config, pullRequest, reporter) {
     const bypassConditions = (0, decision_1.evaluateBypassConditions)({
@@ -32253,7 +32262,9 @@ function buildMatchLines(decision) {
 function buildBypassConditionLines(config, bypassConditions) {
     const configured = bypassConditions.filter((condition) => condition.configured);
     if (configured.length === 0) {
-        return ['No bypass mechanism is configured for this repository; contact an administrator to proceed.'];
+        return [
+            'No bypass mechanism is configured for this repository; contact an administrator to proceed.',
+        ];
     }
     return configured.map((condition) => {
         if (condition.mechanism === 'bypass-labels') {
@@ -32268,7 +32279,11 @@ function buildBypassConditionLines(config, bypassConditions) {
     });
 }
 function buildFailureMessage(decision, config, bypassConditions) {
-    return [buildFailureHeading(config), ...buildMatchLines(decision), ...buildBypassConditionLines(config, bypassConditions)].join(' ');
+    return [
+        buildFailureHeading(config),
+        ...buildMatchLines(decision),
+        ...buildBypassConditionLines(config, bypassConditions),
+    ].join(' ');
 }
 function buildFailureSummary(decision, config, bypassConditions) {
     const lines = [
@@ -32296,6 +32311,27 @@ async function runWithReporter(reporter) {
         await (0, reporting_1.reportFailClosed)(reporter, error);
     }
 }
+function runRefresh() {
+    const reporter = (0, reporting_1.buildReporter)();
+    runRefreshWithReporter(reporter).catch(() => {
+        core.setFailed(reporting_1.FAIL_CLOSED_MESSAGE);
+    });
+}
+async function runRefreshWithReporter(reporter) {
+    try {
+        const membershipFile = (0, reporting_1.getRequiredEnv)('TEAM_MEMBERSHIP_FILE');
+        await refreshMembership({
+            frozenTeamsInput: core.getInput('frozen-teams'),
+            repoOwner: github_1.context.repo.owner,
+            orgOctokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('ORG_TOKEN')),
+            writeSnapshot: (snapshot) => (0, node_fs_1.writeFileSync)(membershipFile, snapshot, 'utf8'),
+            reporter,
+        });
+    }
+    catch (error) {
+        await (0, reporting_1.reportFailClosed)(reporter, error);
+    }
+}
 function buildEvaluateInput(reporter) {
     return {
         bypassLabelsInput: core.getInput('bypass-labels'),
@@ -32303,21 +32339,26 @@ function buildEvaluateInput(reporter) {
         frozenTeamsInput: core.getInput('frozen-teams'),
         frozenMessageInput: core.getInput('frozen-message'),
         repoOwner: github_1.context.repo.owner,
-        repoName: github_1.context.repo.repo,
         pullRequest: extractPullRequestContext(),
-        octokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('GITHUB_TOKEN')),
-        orgOctokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('ORG_TOKEN')),
+        readMembershipSnapshot: () => {
+            const membershipFile = (0, reporting_1.getRequiredEnv)('TEAM_MEMBERSHIP_FILE');
+            try {
+                return (0, node_fs_1.readFileSync)(membershipFile, 'utf8');
+            }
+            catch (error) {
+                throw new membership_cache_1.MembershipCacheError('Membership cache is unavailable; run its refresh workflow.', { cause: error });
+            }
+        },
         reporter,
     };
 }
 function extractPullRequestContext() {
     const pullRequest = github_1.context.payload.pull_request;
-    if (!pullRequest?.user?.login || !pullRequest.head?.sha) {
+    if (!pullRequest?.user?.login) {
         return undefined;
     }
     return {
         authorLogin: pullRequest.user.login,
-        headSha: pullRequest.head.sha,
         labels: (pullRequest.labels ?? [])
             .map((label) => label.name)
             .filter((name) => typeof name === 'string'),
@@ -32325,7 +32366,105 @@ function extractPullRequestContext() {
     };
 }
 if (require.main === require.cache[eval('__filename')]) {
-    run();
+    if (process.env.TEAM_FREEZE_GUARD_MODE === 'refresh') {
+        runRefresh();
+    }
+    else {
+        run();
+    }
+}
+
+
+/***/ }),
+
+/***/ 7416:
+/***/ ((__unused_webpack_module, exports) => {
+
+"use strict";
+
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.MembershipCacheError = exports.MEMBERSHIP_CACHE_MAX_AGE_MS = void 0;
+exports.serializeMembershipSnapshot = serializeMembershipSnapshot;
+exports.parseMembershipSnapshot = parseMembershipSnapshot;
+exports.MEMBERSHIP_CACHE_MAX_AGE_MS = 3 * 60 * 60 * 1000;
+const SCHEMA_VERSION = 1;
+const MAX_CLOCK_SKEW_MS = 5 * 60 * 1000;
+class MembershipCacheError extends Error {
+    constructor(message, options) {
+        super(message, options);
+        this.name = 'MembershipCacheError';
+    }
+}
+exports.MembershipCacheError = MembershipCacheError;
+function serializeMembershipSnapshot(membership, generatedAt = new Date()) {
+    const teams = Object.fromEntries([...membership.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([team, members]) => [
+        team,
+        [...new Set([...members].map((login) => login.toLowerCase()))].sort(),
+    ]));
+    return `${JSON.stringify({
+        schemaVersion: SCHEMA_VERSION,
+        generatedAt: generatedAt.toISOString(),
+        teams,
+    })}\n`;
+}
+function parseMembershipSnapshot(raw, expectedTeams, now = new Date()) {
+    const snapshot = parseSnapshotJson(raw);
+    if (snapshot.schemaVersion !== SCHEMA_VERSION) {
+        throw new MembershipCacheError(`Membership cache schema ${String(snapshot.schemaVersion)} is unsupported.`);
+    }
+    validateGeneratedAt(snapshot.generatedAt, now);
+    validateTeamKeys(snapshot.teams, expectedTeams);
+    return new Map(expectedTeams.map((team) => {
+        const members = snapshot.teams[team];
+        if (!Array.isArray(members) || members.some((login) => !isNonEmptyString(login))) {
+            throw new MembershipCacheError(`Membership cache entry for "${team}" is invalid.`);
+        }
+        return [team, new Set(members.map((login) => login.toLowerCase()))];
+    }));
+}
+function parseSnapshotJson(raw) {
+    let value;
+    try {
+        value = JSON.parse(raw);
+    }
+    catch (error) {
+        throw new MembershipCacheError('Membership cache is not valid JSON.', { cause: error });
+    }
+    if (!isRecord(value) || !isRecord(value.teams) || typeof value.generatedAt !== 'string') {
+        throw new MembershipCacheError('Membership cache has an invalid structure.');
+    }
+    return value;
+}
+function validateGeneratedAt(generatedAt, now) {
+    const timestamp = Date.parse(generatedAt);
+    if (!Number.isFinite(timestamp)) {
+        throw new MembershipCacheError('Membership cache has an invalid generation time.');
+    }
+    if (timestamp > now.getTime() + MAX_CLOCK_SKEW_MS) {
+        throw new MembershipCacheError('Membership cache generation time is in the future.');
+    }
+    if (now.getTime() - timestamp > exports.MEMBERSHIP_CACHE_MAX_AGE_MS) {
+        throw new MembershipCacheError('Membership cache is stale; run its refresh workflow.');
+    }
+}
+function validateTeamKeys(teams, expectedTeams) {
+    const actual = Object.keys(teams).sort();
+    const expected = [...expectedTeams].sort();
+    if (actual.length !== expected.length || actual.some((team, index) => team !== expected[index])) {
+        throw new MembershipCacheError('Membership cache does not match the configured frozen teams.');
+    }
+}
+function isRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function isNonEmptyString(value) {
+    return typeof value === 'string' && value.length > 0;
 }
 
 
@@ -32557,6 +32696,14 @@ module.exports = require("node:dns");
 
 "use strict";
 module.exports = require("node:events");
+
+/***/ }),
+
+/***/ 3024:
+/***/ ((module) => {
+
+"use strict";
+module.exports = require("node:fs");
 
 /***/ }),
 
