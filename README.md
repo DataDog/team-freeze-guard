@@ -51,14 +51,13 @@ on:
       - ready_for_review
       - edited
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
   team-freeze-guard:
     name: Team freeze guard
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
 
     steps:
       - uses: DataDog/team-freeze-guard@<full-commit-sha>
@@ -105,14 +104,15 @@ An empty `frozen-teams` values means that no check is performed (no code freeze)
 | `frozen-message` | No | `Your team is frozen` | Message used as the check failure reason and summary heading when a frozen team participates. |
 
 
-### Required workflow permissions
+### Required job permissions
 
 | Permission | Reason |
 | --- | --- |
 | `id-token: write` | Allows `dd-octo-sts-action` to exchange the workflow's OIDC identity for a short-lived GitHub App token. |
 | `contents: read` | Allows the default `GITHUB_TOKEN` to read repository and commit data needed to resolve the head commit's committer. |
 
-An action cannot grant these permissions to itself; they must be declared by the calling workflow.
+An action cannot grant these permissions to itself; they must be declared by the calling job.
+
 
 Keep `team-freeze-guard` alone in its job. `id-token: write` applies to every step in the job, so unrelated third-party actions should not share the same job.
 
