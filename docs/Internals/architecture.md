@@ -1,47 +1,43 @@
 ## Architecture
 
-`team-freeze-guard` is a composite GitHub Action containing two logical components:
+`team-freeze-guard` is a composite GitHub Action containing two operations:
 
-1. **Token retrieval:** `DataDog/dd-octo-sts-action` exchanges the job's GitHub OIDC identity for a short-lived, organization-scoped GitHub App token to read membership data.
-2. **Policy evaluation:** a bundled Node.js program reads the repository configuration and pull request state, resolves team membership, and succeeds or fails the Action job.
+1. **Refresh:** a trusted default-branch push, scheduled, or manually dispatched run uses
+   `DataDog/dd-octo-sts-action` and normally one batched GraphQL query to write a
+   team-membership snapshot.
+2. **Evaluation:** a `pull_request_target` run restores that snapshot and checks the pull
+   request author without making GitHub API calls.
 
 ```text
-Trusted pull_request_target workflow
-                |
-                v
-       GitHub OIDC identity
-                |
-                v
-       DataDog/dd-octo-sts-action
-                |
-                v
- Short-lived token with Members: read
-                |
-                v
-       Team freeze evaluator
-        /              \
-       v                v
-Repository/PR APIs   Team membership API
-       \                /
-        v              v
-       Pass or fail required check
+Trusted push/schedule/workflow_dispatch    Trusted pull_request_target
+                   |                                  |
+                   v                                  v
+    Octo STS -> GitHub GraphQL                 Restore snapshot
+                   |                                  |
+                   v                                  v
+            Save snapshot                   Check PR event author
+                                                      |
+                                                      v
+                                             Pass or fail check
 ```
 
-The consumer sees a single action call, while token retrieval remains centralized and does not require a PAT, repository secret, or GitHub App private key.
+The action selects the operation from `github.event_name`; consumers use the same action call
+for every supported trigger. Token retrieval remains centralized and does not require a PAT,
+repository secret, or GitHub App private key.
 
 
 ## Why a composite action
 
-A JavaScript action cannot directly invoke another GitHub Action. A composite action can call `DataDog/dd-octo-sts-action` and then run the bundled evaluator as a second step.
+A JavaScript action cannot directly invoke other GitHub Actions. A composite action can invoke Octo STS and the cache actions around the bundled program.
 
-This provides a one-step consumer interface while preserving the existing Octo STS implementation and trust policies.
+This provides one interface for both refresh and evaluation.
 
 The composite action cannot define workflow triggers, job permissions, or repository rulesets. Those remain explicit in the consuming repository because GitHub evaluates them before the action starts.
 
 
 ### Trusted execution model
 
-The workflow uses `pull_request_target` so GitHub executes the workflow definition from the trusted base branch and can issue an OIDC identity for the protected context, including for pull requests from forks.
+The evaluation workflow uses `pull_request_target` so GitHub executes its definition and configuration from the trusted base branch, including for pull requests from forks.
 
 Because `pull_request_target` runs with privileges associated with the base repository, the implementation follows these rules:
 
@@ -60,6 +56,9 @@ The evaluator retrieves configuration (`bypass-labels`, `bypass-title-pattern`, 
 Because `pull_request_target` always evaluates the workflow definition from the base branch, a pull request cannot change its own `frozen-teams`, `bypass-labels`, or `bypass-title-pattern` by editing the workflow file on its own branch — the base-branch version is authoritative regardless of what the pull request contains. The pull request *title* itself, however, is untrusted input read from the event payload (like labels), not from this trusted configuration.
 
 
-### No GitHub Actions cache
+### GitHub Actions cache
 
-`actions/cache` cannot be used to cache anything across runs of this action (e.g. resolved team membership), and never will be able to, as long as the trigger is `pull_request_target`. GitHub issues read-only Actions cache tokens for `pull_request`/`pull_request_target`-triggered runs ("read-only Actions cache for untrusted triggers"), so a save always fails with `cache write denied: token has no writable scopes` — regardless of the calling workflow's declared `permissions:`, of repo-level cache settings, or of how the cache action is invoked. This was tried once (team-membership caching, see `docs/Internals/implementation-plan.md`'s PR 9) and reverted after live e2e testing confirmed the write is always denied.
+`pull_request_target` receives a read-only cache token, which is why the earlier attempt to
+restore and save in the pull request job failed. The new design writes immutable cache entries
+from trusted `push`, `schedule`, and `workflow_dispatch` runs and only restores them from pull
+request runs. Snapshots are bound to the configured team list and rejected after three hours.

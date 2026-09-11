@@ -3,21 +3,32 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
+import { readFileSync, writeFileSync } from 'node:fs'
 import * as core from '@actions/core'
 import { context, getOctokit } from '@actions/github'
-import { ConfigError, parseConfig } from './config'
+import { ConfigError, parseConfig, parseFrozenTeamsInput } from './config'
 import { decide, evaluateBypassConditions, shouldBypass } from './decision'
 import type { Config } from './config'
 import type { BypassCondition, Decision } from './decision'
-import { resolveParticipants } from './github/participants'
 import { resolveTeamMembership } from './github/teams'
-import { FAIL_CLOSED_MESSAGE, buildReporter, getRequiredEnv, reportFailClosed, safeWriteSummary, type Reporter } from './reporting'
+import {
+  MembershipCacheError,
+  parseMembershipSnapshot,
+  serializeMembershipSnapshot,
+} from './membership-cache'
+import {
+  FAIL_CLOSED_MESSAGE,
+  buildReporter,
+  getRequiredEnv,
+  reportFailClosed,
+  safeWriteSummary,
+  type Reporter,
+} from './reporting'
 
 type Octokit = ReturnType<typeof getOctokit>
 
 export interface PullRequestContext {
   authorLogin: string
-  headSha: string
   labels: string[]
   title: string
 }
@@ -28,11 +39,18 @@ export interface EvaluateInput {
   frozenTeamsInput: string | undefined
   frozenMessageInput: string | undefined
   repoOwner: string
-  repoName: string
   pullRequest: PullRequestContext | undefined
-  octokit: Octokit
-  // Octo-STS-issued, org-scoped client used only to resolve frozen-team membership.
+  readMembershipSnapshot: () => string
+  now?: Date
+  reporter: Reporter
+}
+
+export interface RefreshInput {
+  frozenTeamsInput: string | undefined
+  repoOwner: string
   orgOctokit: Octokit
+  generatedAt?: Date
+  writeSnapshot: (snapshot: string) => void
   reporter: Reporter
 }
 
@@ -58,6 +76,11 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     return
   }
 
+  if (config.frozenTeams.length === 0) {
+    input.reporter.info('No frozen teams configured; passing.')
+    return
+  }
+
   if (!input.pullRequest) {
     throw new Error('This event does not carry a pull request context.')
   }
@@ -70,46 +93,59 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
       prTitle: input.pullRequest.title,
     })
   ) {
-    input.reporter.info('The configured bypass conditions are satisfied; passing without evaluating participants.')
+    input.reporter.info(
+      'The configured bypass conditions are satisfied; passing without evaluating the pull request author.',
+    )
     return
   }
 
-  const teamMembership = await resolveTeamMembership({
-    octokit: input.orgOctokit,
-    org: input.repoOwner,
-    teamHandles: config.frozenTeams,
-  })
-
-  const participants = await resolveParticipants({
-    octokit: input.octokit,
-    owner: input.repoOwner,
-    repo: input.repoName,
-    headSha: input.pullRequest.headSha,
-    prAuthorLogin: input.pullRequest.authorLogin,
-  })
-
-  for (const identity of participants.unmappedIdentities) {
-    input.reporter.warning(
-      `Could not map commit identity "${identity}" to a GitHub account; it was not checked against frozen teams.`,
-    )
-  }
-
+  const teamMembership = parseMembershipSnapshot(
+    input.readMembershipSnapshot(),
+    config.frozenTeams,
+    input.now,
+  )
   const decision = decide({
     frozenTeams: config.frozenTeams,
     bypassLabels: config.bypassLabels,
     bypassTitlePattern: config.bypassTitlePattern,
     prLabels: input.pullRequest.labels,
     prTitle: input.pullRequest.title,
-    participants: participants.logins,
+    participants: [input.pullRequest.authorLogin],
     teamMembership,
   })
 
   if (decision.outcome === 'pass') {
-    input.reporter.info('No participant belongs to a frozen team; passing.')
+    input.reporter.info('The pull request author does not belong to a frozen team; passing.')
     return
   }
 
   await reportFailure(decision, config, input.pullRequest, input.reporter)
+}
+
+export async function refreshMembership(input: RefreshInput): Promise<void> {
+  try {
+    const frozenTeams = parseFrozenTeamsInput(input.frozenTeamsInput, input.repoOwner)
+    if (frozenTeams instanceof ConfigError) {
+      input.reporter.setFailed(frozenTeams.message)
+      return
+    }
+    if (frozenTeams.length === 0) {
+      input.reporter.info('No frozen teams configured; no membership cache is needed.')
+      return
+    }
+
+    const membership = await resolveTeamMembership({
+      octokit: input.orgOctokit,
+      org: input.repoOwner,
+      teamHandles: frozenTeams,
+    })
+    input.writeSnapshot(serializeMembershipSnapshot(membership, input.generatedAt))
+    input.reporter.info(
+      `Resolved and cached membership for ${String(frozenTeams.length)} team(s).`,
+    )
+  } catch (error) {
+    await reportFailClosed(input.reporter, error)
+  }
 }
 
 async function reportFailure(
@@ -134,18 +170,25 @@ function buildFailureHeading(config: Config): string {
 }
 
 function buildMatchLines(decision: Decision): string[] {
-  return decision.matches.map((match) => `- @${match.participant} belongs to frozen team ${match.team}.`)
+  return decision.matches.map(
+    (match) => `- @${match.participant} belongs to frozen team ${match.team}.`,
+  )
 }
 
 // Reports the current status of every configured bypass mechanism, one line
 // each, so the reader can see exactly which one(s) are still missing without
 // having to infer it from the overall pass/fail outcome. An unconfigured
 // mechanism does not gate the bypass, so it is omitted rather than reported.
-function buildBypassConditionLines(config: Config, bypassConditions: BypassCondition[]): string[] {
+function buildBypassConditionLines(
+  config: Config,
+  bypassConditions: BypassCondition[],
+): string[] {
   const configured = bypassConditions.filter((condition) => condition.configured)
 
   if (configured.length === 0) {
-    return ['No bypass mechanism is configured for this repository; contact an administrator to proceed.']
+    return [
+      'No bypass mechanism is configured for this repository; contact an administrator to proceed.',
+    ]
   }
 
   return configured.map((condition) => {
@@ -162,13 +205,23 @@ function buildBypassConditionLines(config: Config, bypassConditions: BypassCondi
   })
 }
 
-function buildFailureMessage(decision: Decision, config: Config, bypassConditions: BypassCondition[]): string {
-  return [buildFailureHeading(config), ...buildMatchLines(decision), ...buildBypassConditionLines(config, bypassConditions)].join(
-    ' ',
-  )
+function buildFailureMessage(
+  decision: Decision,
+  config: Config,
+  bypassConditions: BypassCondition[],
+): string {
+  return [
+    buildFailureHeading(config),
+    ...buildMatchLines(decision),
+    ...buildBypassConditionLines(config, bypassConditions),
+  ].join(' ')
 }
 
-function buildFailureSummary(decision: Decision, config: Config, bypassConditions: BypassCondition[]): string {
+function buildFailureSummary(
+  decision: Decision,
+  config: Config,
+  bypassConditions: BypassCondition[],
+): string {
   const lines = [
     buildFailureHeading(config),
     '',
@@ -197,6 +250,28 @@ async function runWithReporter(reporter: Reporter): Promise<void> {
   }
 }
 
+export function runRefresh(): void {
+  const reporter = buildReporter()
+  runRefreshWithReporter(reporter).catch(() => {
+    core.setFailed(FAIL_CLOSED_MESSAGE)
+  })
+}
+
+async function runRefreshWithReporter(reporter: Reporter): Promise<void> {
+  try {
+    const membershipFile = getRequiredEnv('TEAM_MEMBERSHIP_FILE')
+    await refreshMembership({
+      frozenTeamsInput: core.getInput('frozen-teams'),
+      repoOwner: context.repo.owner,
+      orgOctokit: getOctokit(getRequiredEnv('ORG_TOKEN')),
+      writeSnapshot: (snapshot) => writeFileSync(membershipFile, snapshot, 'utf8'),
+      reporter,
+    })
+  } catch (error) {
+    await reportFailClosed(reporter, error)
+  }
+}
+
 function buildEvaluateInput(reporter: Reporter): EvaluateInput {
   return {
     bypassLabelsInput: core.getInput('bypass-labels'),
@@ -204,26 +279,33 @@ function buildEvaluateInput(reporter: Reporter): EvaluateInput {
     frozenTeamsInput: core.getInput('frozen-teams'),
     frozenMessageInput: core.getInput('frozen-message'),
     repoOwner: context.repo.owner,
-    repoName: context.repo.repo,
     pullRequest: extractPullRequestContext(),
-    octokit: getOctokit(getRequiredEnv('GITHUB_TOKEN')),
-    orgOctokit: getOctokit(getRequiredEnv('ORG_TOKEN')),
+    readMembershipSnapshot: () => {
+      const membershipFile = getRequiredEnv('TEAM_MEMBERSHIP_FILE')
+      try {
+        return readFileSync(membershipFile, 'utf8')
+      } catch (error) {
+        throw new MembershipCacheError(
+          'Membership cache is unavailable; run its refresh workflow.',
+          { cause: error },
+        )
+      }
+    },
     reporter,
   }
 }
 
 function extractPullRequestContext(): PullRequestContext | undefined {
   const pullRequest = context.payload.pull_request as
-    | { user?: { login?: string }; head?: { sha?: string }; labels?: Array<{ name?: string }>; title?: string }
+    | { user?: { login?: string }; labels?: Array<{ name?: string }>; title?: string }
     | undefined
 
-  if (!pullRequest?.user?.login || !pullRequest.head?.sha) {
+  if (!pullRequest?.user?.login) {
     return undefined
   }
 
   return {
     authorLogin: pullRequest.user.login,
-    headSha: pullRequest.head.sha,
     labels: (pullRequest.labels ?? [])
       .map((label) => label.name)
       .filter((name): name is string => typeof name === 'string'),
@@ -232,5 +314,9 @@ function extractPullRequestContext(): PullRequestContext | undefined {
 }
 
 if (require.main === module) {
-  run()
+  if (process.env.TEAM_FREEZE_GUARD_MODE === 'refresh') {
+    runRefresh()
+  } else {
+    run()
+  }
 }

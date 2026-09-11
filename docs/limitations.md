@@ -13,32 +13,28 @@ The incident process must re-run the latest `Team freeze guard` workflow for eve
 
 This reconciliation should be automated by the system that updates the freeze configuration. If immediate reconciliation cannot be guaranteed, a webhook-based GitHub App is stronger than a pure Action implementation.
 
+After a membership change, dispatch the workflow on its default branch before re-running
+pull request checks.
+
 ## Label presence and title pattern matching are not authorization
 
 The action verifies that at least one of the configured `bypass-labels` is present, and/or that the pull request title matches `bypass-title-pattern`, when configured. It does not, by itself, restrict who may apply that label or edit the pull request title — anyone able to edit the pull request can typically also edit its title.
 
 If a bypass mechanism represents an approval rather than a self-declared classification, use an additional mechanism to ensure it was applied or approved by an Incident Commander or CI owner. Possible mechanisms include a bot-owned command, an authorized review, or validation of the label or edit event actor.
 
-## `Co-authored-by` trailers are not evaluated
+## Accountability is author-only
 
-Participant identity resolution uses the GitHub-linked commit committer only (see below). A frozen engineer's contribution recorded solely as a `Co-authored-by:` trailer in a commit message is not detected, since GitHub does not surface trailer identities as a distinct author or committer on the commit. This is an accepted scope limitation, not a bypass GitHub itself can close: closing it would require parsing commit message trailers and mapping free-text identities to GitHub accounts, which is unreliable.
+The action holds the pull request author accountable and does not inspect commits or other contributors. This relies on users not opening a pull request through another person or bot to work around the process.
 
-## Commit authorship is not checked
+## Membership is a snapshot
 
-Participant identity resolution only considers the pull request author and the GitHub-linked *committer* of the current head commit — not the commit *author*. This is a deliberate simplicity tradeoff: checking committer alone is simpler to implement and reason about than also resolving and deduplicating commit authors.
+Membership is refreshed hourly and may be stale until the next refresh. Use `workflow_dispatch` when an immediate refresh is needed. A missing snapshot or one older than three hours fails closed.
 
-The consequence: a frozen-team engineer can ask a teammate to open the pull request and commit on their behalf (e.g. via `git commit --author`), which the check cannot detect — the frozen engineer never appears as the PR author or as a committer. This is treated as an accepted gap, not a technical bypass to close: circumventing a freeze by asking a colleague to front a change on your behalf is a process/HR issue, not something this check is expected to prevent.
-
-## Only the head commit is checked
-
-Participant identity resolution fetches only the pull request's current head commit (`pull_request.head.sha`), not every commit in the pull request's history. This is a deliberate cost/simplicity tradeoff: one API call per evaluation instead of a paginated list of every commit.
-
-The consequence: a commit's committer is only checked at the moment it becomes (or is part of establishing) the head commit under evaluation. In practice this means:
-
-- A `synchronize` event re-evaluates the new head commit each time commits are pushed, so an individual push is checked as it happens.
-- However, if a pull request is opened from a branch that already contained multiple commits (or a force-push replaces several commits at once), only the resulting head commit's committer is checked — the committers of the other, non-head commits bundled into that same event are not.
-
-This is an accepted scope limitation, not a bypass GitHub itself can close: checking every commit would require paginating the full commit list on every evaluation, which is the API cost this design deliberately avoids.
+Changing the workflow file on the default branch automatically refreshes the snapshot through
+its path-filtered `push` trigger. GitHub path filters apply to the whole file, so an unrelated
+change to that file also causes one refresh. A pull request check that runs before the refresh
+finishes fails closed until the new snapshot exists. The refresh does not rerun completed checks
+on existing pull requests.
 
 ## Merge queues
 

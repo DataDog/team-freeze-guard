@@ -6,66 +6,63 @@
 import { describe, expect, it } from 'vitest'
 import { resolveTeamMembership, TeamResolutionError } from '../../src/github/teams'
 
-interface ListMembersParams {
-  org: string
-  team_slug: string
-  per_page?: number
-  page?: number
+interface GraphqlCall {
+  query: string
+  variables: Record<string, string | null>
 }
 
-type TeamPages = Record<string, Array<{ login: string }[]> | { status: number } | Error>
-
-function fakeOctokit(teamPages: TeamPages, calls: ListMembersParams[] = []) {
-  const listMembersInOrg = async (params: ListMembersParams) => {
-    calls.push(params)
-    const result = teamPages[params.team_slug]
-    if (result instanceof Error || (result && 'status' in result && !Array.isArray(result))) {
-      throw result
-    }
-    const pages = result as Array<{ login: string }[]>
-    const page = params.page ?? 1
-    return { data: pages[page - 1] ?? [] }
+interface TeamPage {
+  members: {
+    nodes: Array<{ login: string } | null>
+    pageInfo: { endCursor: string | null; hasNextPage: boolean }
   }
-
-  return {
-    rest: {
-      teams: { listMembersInOrg },
-    },
-    paginate: async (fn: typeof listMembersInOrg, params: ListMembersParams) => {
-      const results: { login: string }[] = []
-      let page = 1
-      const perPage = params.per_page ?? 100
-      for (;;) {
-        const { data } = await fn({ ...params, page })
-        results.push(...data)
-        if (data.length < perPage) {
-          break
-        }
-        page += 1
-      }
-      return results
-    },
-  } as unknown as Parameters<typeof resolveTeamMembership>[0]['octokit']
 }
 
-function membersPage(count: number, prefix: string): { login: string }[] {
-  return Array.from({ length: count }, (_, index) => ({ login: `${prefix}${index}` }))
+type GraphqlResponse = {
+  organization: Record<string, TeamPage | null> | null
+}
+
+function page(logins: string[], hasNextPage = false, endCursor: string | null = null): TeamPage {
+  return {
+    members: {
+      nodes: logins.map((login) => ({ login })),
+      pageInfo: { endCursor, hasNextPage },
+    },
+  }
+}
+
+function fakeOctokit(
+  responses: Array<GraphqlResponse | Error>,
+  calls: GraphqlCall[] = [],
+) {
+  let index = 0
+  return {
+    graphql: async (query: string, variables: Record<string, string | null>) => {
+      calls.push({ query, variables })
+      const response = responses[index]
+      index += 1
+      if (response instanceof Error) {
+        throw response
+      }
+      return response
+    },
+  } as Parameters<typeof resolveTeamMembership>[0]['octokit']
 }
 
 describe('resolveTeamMembership', () => {
-  it('resolves the members of a single team, keyed by the "@org/team-slug" handle', async () => {
-    const octokit = fakeOctokit({ 'team-a': [[{ login: 'alice' }, { login: 'bob' }]] })
-
-    const result = await resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@org/team-a'] })
-
-    expect(result).toEqual(new Map([['@org/team-a', new Set(['alice', 'bob'])]]))
-  })
-
-  it('resolves the members of multiple teams independently', async () => {
-    const octokit = fakeOctokit({
-      'team-a': [[{ login: 'alice' }]],
-      'team-b': [[{ login: 'bob' }, { login: 'carol' }]],
-    })
+  it('resolves every configured team in one GraphQL call', async () => {
+    const calls: GraphqlCall[] = []
+    const octokit = fakeOctokit(
+      [
+        {
+          organization: {
+            team0: page(['Alice']),
+            team1: page(['bob', 'carol']),
+          },
+        },
+      ],
+      calls,
+    )
 
     const result = await resolveTeamMembership({
       octokit,
@@ -79,81 +76,84 @@ describe('resolveTeamMembership', () => {
         ['@org/team-b', new Set(['bob', 'carol'])],
       ]),
     )
+    expect(calls).toHaveLength(1)
+    expect(calls[0].query).toContain('team0: team(slug: $slug0)')
+    expect(calls[0].query).toContain('team1: team(slug: $slug1)')
+    expect(calls[0].variables).toMatchObject({
+      org: 'org',
+      slug0: 'team-a',
+      slug1: 'team-b',
+      cursor0: null,
+      cursor1: null,
+    })
   })
 
-  it('calls the GitHub API with the bare team slug, not the "@org/" handle', async () => {
-    const calls: ListMembersParams[] = []
-    const octokit = fakeOctokit({ 'team-a': [[{ login: 'alice' }]] }, calls)
+  it('fetches another batched page only when a team exceeds 100 members', async () => {
+    const calls: GraphqlCall[] = []
+    const firstPage = Array.from({ length: 100 }, (_, index) => `member-${String(index)}`)
+    const octokit = fakeOctokit(
+      [
+        { organization: { team0: page(firstPage, true, 'next-page') } },
+        { organization: { team0: page(['last-member']) } },
+      ],
+      calls,
+    )
 
-    await resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@org/team-a'] })
-
-    expect(calls[0]).toMatchObject({ org: 'org', team_slug: 'team-a' })
-  })
-
-  it('fully consumes a paginated member list', async () => {
-    const fullPage = membersPage(100, 'member-')
-    const lastPage = [{ login: 'last-member' }]
-    const octokit = fakeOctokit({ 'team-a': [fullPage, lastPage] })
-
-    const result = await resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@org/team-a'] })
+    const result = await resolveTeamMembership({
+      octokit,
+      org: 'org',
+      teamHandles: ['@org/team-a'],
+    })
 
     expect(result.get('@org/team-a')?.size).toBe(101)
     expect(result.get('@org/team-a')?.has('last-member')).toBe(true)
+    expect(calls).toHaveLength(2)
+    expect(calls[1].variables.cursor0).toBe('next-page')
   })
 
-  it('fails closed with a TeamResolutionError for an unknown team (404)', async () => {
-    const octokit = fakeOctokit({ 'team-a': { status: 404 } })
+  it('fails closed for an unknown or inaccessible organization', async () => {
+    const octokit = fakeOctokit([{ organization: null }])
 
     await expect(
       resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@org/team-a'] }),
     ).rejects.toThrow(TeamResolutionError)
   })
 
-  it('fails closed with a TeamResolutionError for an inaccessible team (403)', async () => {
-    const octokit = fakeOctokit({ 'team-a': { status: 403 } })
+  it('fails closed for an unknown or inaccessible team', async () => {
+    const octokit = fakeOctokit([{ organization: { team0: null } }])
 
     await expect(
       resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@org/team-a'] }),
-    ).rejects.toThrow(TeamResolutionError)
+    ).rejects.toThrow('Team "@org/team-a" is unknown or inaccessible.')
   })
 
-  it('fails closed with a TeamResolutionError on a generic HTTP failure (500)', async () => {
-    const octokit = fakeOctokit({ 'team-a': { status: 500 } })
+  it('fails closed when pagination metadata is incomplete', async () => {
+    const octokit = fakeOctokit([
+      { organization: { team0: page(['alice'], true, null) } },
+    ])
 
     await expect(
       resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@org/team-a'] }),
-    ).rejects.toThrow(TeamResolutionError)
+    ).rejects.toThrow('Team "@org/team-a" returned incomplete pagination data.')
   })
 
-  it('fails closed with a TeamResolutionError on a rate-limited/non-HTTP failure', async () => {
-    const octokit = fakeOctokit({ 'team-a': new Error('secondary rate limit exceeded') })
+  it('wraps GraphQL and rate-limit failures', async () => {
+    const octokit = fakeOctokit([new Error('secondary rate limit exceeded')])
 
     await expect(
       resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@org/team-a'] }),
-    ).rejects.toThrow(TeamResolutionError)
-  })
-
-  it('rejects a handle missing the leading "@"', async () => {
-    const octokit = fakeOctokit({ 'team-a': [[{ login: 'alice' }]] })
-
-    await expect(
-      resolveTeamMembership({ octokit, org: 'org', teamHandles: ['org/team-a'] }),
-    ).rejects.toThrow(TeamResolutionError)
-  })
-
-  it('rejects a handle with an extra path segment', async () => {
-    const octokit = fakeOctokit({ 'team-a': [[{ login: 'alice' }]] })
-
-    await expect(
-      resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@org/team-a/extra'] }),
-    ).rejects.toThrow(TeamResolutionError)
+    ).rejects.toThrow('Failed to resolve frozen team membership.')
   })
 
   it('rejects a handle whose org does not match the resolved organization', async () => {
-    const octokit = fakeOctokit({ 'team-a': [[{ login: 'alice' }]] })
+    const octokit = fakeOctokit([])
 
     await expect(
-      resolveTeamMembership({ octokit, org: 'org', teamHandles: ['@other-org/team-a'] }),
+      resolveTeamMembership({
+        octokit,
+        org: 'org',
+        teamHandles: ['@other-org/team-a'],
+      }),
     ).rejects.toThrow(TeamResolutionError)
   })
 })
