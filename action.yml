@@ -44,7 +44,7 @@ runs:
 
     # Trust policy: DataDog/.github/.github/chainguard/team-freeze-guard.read-org-members.sts.yaml
     # (see docs/Internals/octo-sts.md). The org scope and policy are intentionally
-    # not exposed as repository inputs (see README's "Required workflow permissions"
+    # not exposed as repository inputs (see README's "Required job permissions"
     # section), so this is hardcoded here rather than configurable per caller.
     - name: Exchange OIDC identity for an org-scoped GitHub token
       id: octo-sts
