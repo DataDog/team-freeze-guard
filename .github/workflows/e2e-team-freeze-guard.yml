@@ -36,15 +36,14 @@ on:
       - ready_for_review
       - edited
 
-permissions:
-  id-token: write
-  contents: read
-
 jobs:
   team-freeze-guard-e2e:
     name: Team freeze guard (e2e)
     runs-on: ubuntu-latest
     if: github.head_ref == 'e2e-tests'
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
