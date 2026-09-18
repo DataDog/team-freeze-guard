@@ -16,21 +16,24 @@ Unknown teams, inaccessible teams, incomplete pagination, rate limiting, and une
 
 ## Decision algorithm
 
-The action, across `action.yml` and the evaluator (`dist/index.js`) it invokes, applies the following algorithm:
+The action, across `action.yml` and the two Node programs it invokes — `dist/resolve-team-membership/index.js` (team membership resolution) then `dist/index.js` (the evaluator) — applies the following algorithm:
 
 ```text
 if frozen-teams is empty:
-    pass                                    # action.yml, before the evaluator ever runs
+    pass                                    # action.yml, before either Node program ever runs
 
-load and validate trusted repository configuration
+resolve the active members of every frozen team            # dist/resolve-team-membership/index.js,
+                                                             # unconditional whenever this step runs
+write the resolved membership to a JSON file
+
+load and validate trusted repository configuration          # dist/index.js, from here on
 
 if every configured bypass mechanism is satisfied
 (bypass-labels: any entry present; bypass-title-pattern: PR title matches):
     pass
 
 collect PR author and the GitHub-linked committer of the current head commit
-resolve the active members of every frozen team
-find intersections between participants and frozen teams
+find intersections between participants and the JSON file's frozen teams
 
 if there are no intersections:
     pass
@@ -38,13 +41,13 @@ if there are no intersections:
 fail with "Your team is frozen"
 ```
 
-The bypass check runs before team-membership resolution so that a pull request satisfying every configured bypass mechanism never triggers the participant and team-membership API calls: fewer API calls means a faster check and less exposure to transient GitHub/Octo STS infrastructure errors, which fail closed per the Failure policy below. This check (`shouldBypass` in `src/decision.ts`) stays inside the evaluator rather than moving to `action.yml`, so it still runs after the Octo STS exchange below.
+Team-membership resolution now runs in its own step, unconditionally, before the evaluator even starts — see `docs/Internals/architecture.md`'s Architecture section. This means the bypass check (`shouldBypass` in `src/decision.ts`) can no longer save the team-membership API calls the way it once could when both lived in the same process: those calls always happen when `frozen-teams` is non-empty, bypass or not. The bypass check still runs before participant resolution inside the evaluator, so it still saves the one API call needed to identify the head commit's committer (`resolveParticipants` in `src/github/participants.ts`) on a satisfied bypass.
 
-The `frozen-teams`-empty short circuit is stricter than that: it must skip **every** external call, not just the participant and team-membership API calls made from within the evaluator. In particular, the Octo STS token exchange in `action.yml` is itself an external call (one request to Octo STS, distinct from the one-request-per-frozen-team calls made during team-membership resolution) and must not run when `frozen-teams` is empty. `action.yml` enforces this directly, before the evaluator (`dist/index.js`) is ever invoked, via a `shell: python` step, "Early checks," that produces a `skip` output the Octo STS step and the step that invokes `dist/index.js` are both conditioned on:
+The `frozen-teams`-empty short circuit is stricter than "skip participant resolution": it must skip **every** external call, including the Octo STS token exchange and the team-membership API calls, not just the evaluator's own calls. `action.yml` enforces this directly, before either Node program is ever invoked, via a `shell: python` step, "Early checks," that produces a `skip` output the Octo STS step and both `dist/resolve-team-membership/index.js` and `dist/index.js`'s steps are conditioned on:
 
 `frozen-teams` is empty once blank lines are stripped. `inputs.frozen-teams != ''` alone isn't enough here, since a whitespace-only or newline-only value (e.g. `"\n \n"`) is also "no frozen teams" as far as `src/config.ts`'s own parsing would treat it, but isn't the literal `''` string — this step normalizes the same way `splitLines` in `src/config.ts` does before comparing. The `"not set"` sentinel default is deliberately **not** treated as empty here, so an omitted input still reaches `dist/resolve-team-membership/index.js` and fails closed there; because a failed step stops the job by default, `dist/index.js` never runs in that case either.
 
-This means an empty (or whitespace-only) `frozen-teams` configuration makes zero external calls — no Octo STS exchange, no `dist/index.js` invocation at all — while a satisfied bypass on an otherwise-frozen pull request still costs the Octo STS exchange (needed to fail closed on a malformed config) before `shouldBypass` short-circuits the rest of the evaluator.
+This means an empty (or whitespace-only) `frozen-teams` configuration makes zero external calls — no Octo STS exchange, no team-membership resolution, no evaluator invocation at all — while a satisfied bypass on an otherwise-frozen pull request still costs the Octo STS exchange and the team-membership resolution (both needed to fail closed on a malformed config before the evaluator's own `shouldBypass` check ever runs) before that check short-circuits participant resolution.
 
 The policy uses **any-match semantics** for participants and within `bypass-labels`: one frozen participant is enough to require a bypass, and any one of the configured `bypass-labels` is enough to satisfy that mechanism. Across mechanisms, semantics are **all-match**: when both `bypass-labels` and `bypass-title-pattern` are configured, both must be satisfied — a bypass label alone, or a matching title alone, does not pass. A mechanism left unconfigured (empty) is treated as satisfied, so a single configured mechanism can bypass on its own. The participant any-match prevents a frozen engineer from bypassing the policy by opening a pull request through another author or committing directly to an existing pull request. It does not prevent a frozen engineer from asking a teammate to both open the pull request and commit on their behalf — see the "Commit authorship is not checked" limitation in `docs/limitations.md`.
 

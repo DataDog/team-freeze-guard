@@ -1,9 +1,10 @@
 ## Architecture
 
-`team-freeze-guard` is a composite GitHub Action containing two logical components:
+`team-freeze-guard` is a composite GitHub Action containing three logical components, run as three sequential steps (after an "Early checks" step that can skip all of them when `frozen-teams` is empty — see `docs/Internals/README.md`'s Decision algorithm):
 
 1. **Token retrieval:** `DataDog/dd-octo-sts-action` exchanges the job's GitHub OIDC identity for a short-lived, organization-scoped GitHub App token to read membership data.
-2. **Policy evaluation:** a bundled Node.js program reads the repository configuration and pull request state, resolves team membership, and succeeds or fails the Action job.
+2. **Team membership resolution:** a bundled Node.js program (`dist/resolve-team-membership/index.js`) uses that token to list the members of every configured frozen team and writes the result to a JSON file on the runner's filesystem (`runner.temp`).
+3. **Policy evaluation:** a second bundled Node.js program (`dist/index.js`) reads the repository configuration and pull request state, reads the team-membership JSON file written by step 2 (it does not call the Teams API itself), and succeeds or fails the Action job.
 
 ```text
 Trusted pull_request_target workflow
@@ -18,21 +19,27 @@ Trusted pull_request_target workflow
  Short-lived token with Members: read
                 |
                 v
+   Team membership resolution ---> Team membership API
+                |
+                v
+   Team membership JSON file (runner.temp)
+                |
+                v
        Team freeze evaluator
         /              \
        v                v
-Repository/PR APIs   Team membership API
+Repository/PR APIs   Team membership JSON file
        \                /
         v              v
        Pass or fail required check
 ```
 
-The consumer sees a single action call, while token retrieval remains centralized and does not require a PAT, repository secret, or GitHub App private key.
+The consumer sees a single action call, while token retrieval remains centralized and does not require a PAT, repository secret, or GitHub App private key. The JSON file hand-off between steps 2 and 3 exists so a future change can cache step 2's result across runs (see `docs/Internals/implementation-plan.md`'s PR 8 and PR 9); `actions/cache` cannot currently do this for `pull_request_target`-triggered runs (see "No GitHub Actions cache" below).
 
 
 ## Why a composite action
 
-A JavaScript action cannot directly invoke another GitHub Action. A composite action can call `DataDog/dd-octo-sts-action` and then run the bundled evaluator as a second step.
+A JavaScript action cannot directly invoke another GitHub Action. A composite action can call `DataDog/dd-octo-sts-action` and then run the bundled team-membership resolution and evaluator programs as subsequent steps.
 
 This provides a one-step consumer interface while preserving the existing Octo STS implementation and trust policies.
 
