@@ -32,16 +32,15 @@ if every configured bypass mechanism is satisfied
 (bypass-labels: any entry present; bypass-title-pattern: PR title matches):
     pass
 
-collect PR author and the GitHub-linked committer of the current head commit
-find intersections between participants and the JSON file's frozen teams
+check whether the PR author belongs to any team in the JSON file's frozen teams
 
-if there are no intersections:
+if the PR author does not belong to a frozen team:
     pass
 
 fail with "Your team is frozen"
 ```
 
-Team-membership resolution now runs in its own step, unconditionally, before the evaluator even starts — see `docs/Internals/architecture.md`'s Architecture section. This means the bypass check (`shouldBypass` in `src/decision.ts`) can no longer save the team-membership API calls the way it once could when both lived in the same process: those calls always happen when `frozen-teams` is non-empty, bypass or not. The bypass check still runs before participant resolution inside the evaluator, so it still saves the one API call needed to identify the head commit's committer (`resolveParticipants` in `src/github/participants.ts`) on a satisfied bypass.
+Team-membership resolution now runs in its own step, unconditionally, before the evaluator even starts — see `docs/Internals/architecture.md`'s Architecture section. This means the bypass check (`shouldBypass` in `src/decision.ts`) can no longer save the team-membership API calls the way it once could when both lived in the same process: those calls always happen when `frozen-teams` is non-empty, bypass or not.
 
 The `frozen-teams`-empty short circuit is stricter than "skip participant resolution": it must skip **every** external call, including the Octo STS token exchange and the team-membership API calls, not just the evaluator's own calls. `action.yml` enforces this directly, before either Node program is ever invoked, via a `shell: python` step, "Early checks," that produces a `skip` output the Octo STS step and both `dist/resolve-team-membership/index.js` and `dist/index.js`'s steps are conditioned on:
 
@@ -49,7 +48,7 @@ The `frozen-teams`-empty short circuit is stricter than "skip participant resolu
 
 This means an empty (or whitespace-only) `frozen-teams` configuration makes zero external calls — no Octo STS exchange, no team-membership resolution, no evaluator invocation at all — while a satisfied bypass on an otherwise-frozen pull request still costs the Octo STS exchange and the team-membership resolution (both needed to fail closed on a malformed config before the evaluator's own `shouldBypass` check ever runs) before that check short-circuits participant resolution.
 
-The policy uses **any-match semantics** for participants and within `bypass-labels`: one frozen participant is enough to require a bypass, and any one of the configured `bypass-labels` is enough to satisfy that mechanism. Across mechanisms, semantics are **all-match**: when both `bypass-labels` and `bypass-title-pattern` are configured, both must be satisfied — a bypass label alone, or a matching title alone, does not pass. A mechanism left unconfigured (empty) is treated as satisfied, so a single configured mechanism can bypass on its own. The participant any-match prevents a frozen engineer from bypassing the policy by opening a pull request through another author or committing directly to an existing pull request. It does not prevent a frozen engineer from asking a teammate to both open the pull request and commit on their behalf — see the "Commit authorship is not checked" limitation in `docs/limitations.md`.
+The policy uses **any-match semantics** within `bypass-labels`: any one of the configured `bypass-labels` is enough to satisfy that mechanism. Across mechanisms, semantics are **all-match**: when both `bypass-labels` and `bypass-title-pattern` are configured, both must be satisfied — a bypass label alone, or a matching title alone, does not pass. A mechanism left unconfigured (empty) is treated as satisfied, so a single configured mechanism can bypass on its own. Only the pull request author is checked against frozen-team membership; it does not prevent a frozen engineer from asking a teammate to open the pull request or commit on their behalf — see the "Only the pull request author is checked" limitation in `docs/limitations.md`.
 
 ## Check reporting
 
@@ -88,7 +87,7 @@ The workflow reacts to:
 | --- | --- |
 | `opened` | Initial evaluation. |
 | `reopened` | Re-evaluate a reopened pull request. |
-| `synchronize` | Re-evaluate authors and committers after commits change. |
+| `synchronize` | Re-evaluate after new commits are pushed. The PR author does not change on this event, so this mostly guards against a stale prior result rather than a new participant. |
 | `labeled` | Permit the pull request when a configured bypass label is added. |
 | `unlabeled` | Block the pull request if the last matching bypass label is removed. |
 | `ready_for_review` | Evaluate a draft when it becomes reviewable. |

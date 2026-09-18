@@ -2,7 +2,7 @@
 
 `team-freeze-guard` enforces per-team code freezes on GitHub pull requests.
 
-When a pull request author or commit committer belongs to a configured frozen GitHub team, the pull request must satisfy every configured bypass mechanism: it must carry at least one of the configured bypass labels (when `bypass-labels` is set), and its title must match the configured `bypass-title-pattern` (when set). Otherwise, the action fails with `Your team is frozen`, and a required GitHub ruleset check prevents the pull request from being merged.
+When a pull request's author belongs to a configured frozen GitHub team, the pull request must satisfy every configured bypass mechanism: it must carry at least one of the configured bypass labels (when `bypass-labels` is set), and its title must match the configured `bypass-title-pattern` (when set). Otherwise, the action fails with `Your team is frozen`, and a required GitHub ruleset check prevents the pull request from being merged.
 
 The action uses [DataDog/dd-octo-sts-action](https://github.com/DataDog/dd-octo-sts-action) internally to obtain a short-lived GitHub token with organization membership permissions. It does not require a personal access token or a GitHub App private key in the consuming repository. This GitHub Action does not contain any other mechanism for obtaining this membership permission, which means it is meant to work only on DataDog's org repositories.
 
@@ -23,12 +23,7 @@ flowchart TD
     C -->|Yes| FAIL["Fail"]
 ```
 
-A participant is:
-
-- The pull request author.
-- The GitHub-linked committer of the pull request's current head commit.
-
-Only the current head commit is checked, not the pull request's full commit history, and commit *authorship* is not checked, only the committer — see [`docs/limitations.md`](docs/limitations.md) for the tradeoffs this implies. If resolving that commit's committer keeps failing after retries, the check is skipped for that evaluation rather than failing the pull request closed.
+The only participant checked is the pull request author (`pull_request.user.login`). Commit committers, commit authors, and `Co-authored-by:` trailers are not checked — see [`docs/limitations.md`](docs/limitations.md) for the tradeoffs this implies.
 
 
 ## Workflow configuration
@@ -57,7 +52,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
-      contents: read
 
     steps:
       - uses: DataDog/team-freeze-guard@<full-commit-sha>
@@ -109,7 +103,6 @@ An empty `frozen-teams` values means that no check is performed (no code freeze)
 | Permission | Reason |
 | --- | --- |
 | `id-token: write` | Allows `dd-octo-sts-action` to exchange the workflow's OIDC identity for a short-lived GitHub App token. |
-| `contents: read` | Allows the default `GITHUB_TOKEN` to read repository and commit data needed to resolve the head commit's committer. |
 
 An action cannot grant these permissions to itself; they must be declared by the calling job.
 
@@ -147,7 +140,6 @@ Keep the job name stable. Changing it changes the status-check name and can leav
 | A participant belongs to a frozen team and every configured bypass mechanism is satisfied | Pass |
 | A participant belongs to a frozen team, both `bypass-labels` and `bypass-title-pattern` are configured, and only one of them is satisfied | Fail |
 | The last remaining bypass label is removed while a participant belongs to a frozen team | Re-evaluate and fail |
-| A new commit introduces a frozen participant | Re-evaluate and require the configured bypass mechanisms |
 | The configuration is missing or malformed | Fail |
 | A configured frozen team is unknown or inaccessible | Fail |
 | GitHub or Octo STS cannot be queried reliably (rate limiting, pagination, or unexpected responses) | Fail |

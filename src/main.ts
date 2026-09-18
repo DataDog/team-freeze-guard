@@ -4,20 +4,16 @@
 // Copyright 2026 Datadog, Inc.
 
 import * as core from '@actions/core'
-import { context, getOctokit } from '@actions/github'
+import { context } from '@actions/github'
 import { ConfigError, parseConfig } from './config'
 import { decide, evaluateBypassConditions, shouldBypass } from './decision'
 import type { Config } from './config'
 import type { BypassCondition, Decision } from './decision'
-import { resolveParticipants } from './github/participants'
-import { FAIL_CLOSED_MESSAGE, buildReporter, getRequiredEnv, reportFailClosed, safeWriteSummary, type Reporter } from './reporting'
+import { FAIL_CLOSED_MESSAGE, buildReporter, reportFailClosed, safeWriteSummary, getRequiredEnv, type Reporter } from './reporting'
 import { readTeamMembershipFile, type TeamMembership } from './team-membership-file'
-
-type Octokit = ReturnType<typeof getOctokit>
 
 export interface PullRequestContext {
   authorLogin: string
-  headSha: string
   labels: string[]
   title: string
 }
@@ -26,10 +22,7 @@ export interface EvaluateInput {
   bypassLabelsInput: string | undefined
   bypassTitlePatternInput: string | undefined
   frozenMessageInput: string | undefined
-  repoOwner: string
-  repoName: string
   pullRequest: PullRequestContext | undefined
-  octokit: Octokit
   // Resolved by the separate "Resolve frozen team membership" action step, and
   // read from disk rather than fetched here; see buildEvaluateInput.
   teamMembership: TeamMembership
@@ -72,27 +65,13 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     return
   }
 
-  const participants = await resolveParticipants({
-    octokit: input.octokit,
-    owner: input.repoOwner,
-    repo: input.repoName,
-    headSha: input.pullRequest.headSha,
-    prAuthorLogin: input.pullRequest.authorLogin,
-  })
-
-  for (const identity of participants.unmappedIdentities) {
-    input.reporter.warning(
-      `Could not map commit identity "${identity}" to a GitHub account; it was not checked against frozen teams.`,
-    )
-  }
-
   const decision = decide({
     frozenTeams: [...input.teamMembership.keys()],
     bypassLabels: config.bypassLabels,
     bypassTitlePattern: config.bypassTitlePattern,
     prLabels: input.pullRequest.labels,
     prTitle: input.pullRequest.title,
-    participants: participants.logins,
+    participants: [input.pullRequest.authorLogin],
     teamMembership: input.teamMembership,
   })
 
@@ -194,10 +173,7 @@ async function buildEvaluateInput(reporter: Reporter): Promise<EvaluateInput> {
     bypassLabelsInput: core.getInput('bypass-labels'),
     bypassTitlePatternInput: core.getInput('bypass-title-pattern'),
     frozenMessageInput: core.getInput('frozen-message'),
-    repoOwner: context.repo.owner,
-    repoName: context.repo.repo,
     pullRequest: extractPullRequestContext(),
-    octokit: getOctokit(getRequiredEnv('GITHUB_TOKEN')),
     teamMembership: await readTeamMembershipFile(getRequiredEnv('TEAM_MEMBERSHIP_FILE')),
     reporter,
   }
@@ -205,16 +181,15 @@ async function buildEvaluateInput(reporter: Reporter): Promise<EvaluateInput> {
 
 function extractPullRequestContext(): PullRequestContext | undefined {
   const pullRequest = context.payload.pull_request as
-    | { user?: { login?: string }; head?: { sha?: string }; labels?: Array<{ name?: string }>; title?: string }
+    | { user?: { login?: string }; labels?: Array<{ name?: string }>; title?: string }
     | undefined
 
-  if (!pullRequest?.user?.login || !pullRequest.head?.sha) {
+  if (!pullRequest?.user?.login) {
     return undefined
   }
 
   return {
     authorLogin: pullRequest.user.login,
-    headSha: pullRequest.head.sha,
     labels: (pullRequest.labels ?? [])
       .map((label) => label.name)
       .filter((name): name is string => typeof name === 'string'),
