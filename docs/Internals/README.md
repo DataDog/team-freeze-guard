@@ -2,7 +2,7 @@
 
 ## Team membership resolution
 
-For each configured frozen team, the evaluator lists active team members using the organization-scoped Octo STS token and intersects that set with the pull request participant set.
+For each configured frozen team, the separate "Resolve frozen team membership" action step (`dist/resolve-team-membership/index.js`) lists active team members using the organization-scoped Octo STS token and writes the result to a JSON file. The evaluator (`dist/index.js`) reads that file rather than calling the Teams API itself, and treats the file's keys as the authoritative frozen-teams list — it no longer parses the raw `frozen-teams` input. It intersects team membership with the pull request participant set.
 
 Listing each team's members is preferred over querying every participant against every team:
 
@@ -42,7 +42,7 @@ The bypass check runs before team-membership resolution so that a pull request s
 
 The `frozen-teams`-empty short circuit is stricter than that: it must skip **every** external call, not just the participant and team-membership API calls made from within the evaluator. In particular, the Octo STS token exchange in `action.yml` is itself an external call (one request to Octo STS, distinct from the one-request-per-frozen-team calls made during team-membership resolution) and must not run when `frozen-teams` is empty. `action.yml` enforces this directly, before the evaluator (`dist/index.js`) is ever invoked, via a `shell: python` step, "Early checks," that produces a `skip` output the Octo STS step and the step that invokes `dist/index.js` are both conditioned on:
 
-`frozen-teams` is empty once blank lines are stripped. `inputs.frozen-teams != ''` alone isn't enough here, since a whitespace-only or newline-only value (e.g. `"\n \n"`) is also "no frozen teams" as far as `src/config.ts`'s own parsing would treat it, but isn't the literal `''` string — this step normalizes the same way `splitLines` in `src/config.ts` does before comparing. The `"not set"` sentinel default is deliberately **not** treated as empty here, so an omitted input still reaches `dist/index.js` and fails closed.
+`frozen-teams` is empty once blank lines are stripped. `inputs.frozen-teams != ''` alone isn't enough here, since a whitespace-only or newline-only value (e.g. `"\n \n"`) is also "no frozen teams" as far as `src/config.ts`'s own parsing would treat it, but isn't the literal `''` string — this step normalizes the same way `splitLines` in `src/config.ts` does before comparing. The `"not set"` sentinel default is deliberately **not** treated as empty here, so an omitted input still reaches `dist/resolve-team-membership/index.js` and fails closed there; because a failed step stops the job by default, `dist/index.js` never runs in that case either.
 
 This means an empty (or whitespace-only) `frozen-teams` configuration makes zero external calls — no Octo STS exchange, no `dist/index.js` invocation at all — while a satisfied bypass on an otherwise-frozen pull request still costs the Octo STS exchange (needed to fail closed on a malformed config) before `shouldBypass` short-circuits the rest of the evaluator.
 

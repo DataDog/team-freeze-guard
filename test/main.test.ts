@@ -55,7 +55,6 @@ function baseInput(overrides: Partial<EvaluateInput> = {}): EvaluateInput {
   return {
     bypassLabelsInput: 'ci-remediation',
     bypassTitlePatternInput: '',
-    frozenTeamsInput: '@org/team-a',
     frozenMessageInput: 'Your team is frozen',
     repoOwner: 'org',
     repoName: 'repo',
@@ -68,15 +67,6 @@ function baseInput(overrides: Partial<EvaluateInput> = {}): EvaluateInput {
 }
 
 describe('evaluate', () => {
-  it('fails closed with the config error message when config is malformed', async () => {
-    const reporter = fakeReporter()
-    await evaluate(baseInput({ frozenTeamsInput: 'not-a-valid-handle', reporter }))
-
-    expect(reporter.failures).toEqual([
-      'frozen-teams entry "not-a-valid-handle" is not a valid GitHub team slug. Use the "@org/team-slug" format, e.g. "@my-org/my-team".',
-    ])
-  })
-
   it('fails closed when there is no pull request context', async () => {
     const reporter = fakeReporter()
     await evaluate(baseInput({ pullRequest: undefined, reporter }))
@@ -129,7 +119,6 @@ describe('evaluate', () => {
     const reporter = fakeReporter()
     await evaluate(
       baseInput({
-        frozenTeamsInput: '@org/team-a\n@org/team-b',
         octokit: fakeOctokit({ committer: { login: 'bob' }, commit: { committer: null } }),
         teamMembership: teamMembership({ '@org/team-a': ['carol'], '@org/team-b': ['bob'] }),
         reporter,
@@ -206,15 +195,6 @@ describe('evaluate', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
-
-  it('fails closed with a config error when frozen-teams is the action.yml "not set" sentinel', async () => {
-    const reporter = fakeReporter()
-    await evaluate(baseInput({ frozenTeamsInput: '__frozen-teams-not-set__', reporter }))
-
-    expect(reporter.failures).toEqual([
-      'frozen-teams entry "__frozen-teams-not-set__" is not a valid GitHub team slug. Use the "@org/team-slug" format, e.g. "@my-org/my-team".',
-    ])
   })
 
   it('still calls setFailed with the frozen message when writing the failure summary throws', async () => {

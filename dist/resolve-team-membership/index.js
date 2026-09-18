@@ -31842,22 +31842,15 @@ class ConfigError extends Error {
 exports.ConfigError = ConfigError;
 const TEAM_ENTRY_PATTERN = /^@([^/]+)\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/;
 function parseConfig(input) {
-    if (input.bypassLabels === undefined ||
-        input.bypassTitlePattern === undefined ||
-        input.frozenTeams === undefined ||
-        input.frozenMessage === undefined) {
-        return new ConfigError('The "bypass-labels", "bypass-title-pattern", "frozen-teams" and "frozen-message" inputs are required and must be provided by the calling workflow.');
+    if (input.bypassLabels === undefined || input.bypassTitlePattern === undefined || input.frozenMessage === undefined) {
+        return new ConfigError('The "bypass-labels", "bypass-title-pattern" and "frozen-message" inputs are required and must be provided by the calling workflow.');
     }
     const bypassLabels = parseBypassLabels(input.bypassLabels);
     const bypassTitlePattern = parseBypassTitlePattern(input.bypassTitlePattern);
     if (bypassTitlePattern instanceof ConfigError) {
         return bypassTitlePattern;
     }
-    const frozenTeams = parseFrozenTeams(input.frozenTeams, input.repoOwner);
-    if (frozenTeams instanceof ConfigError) {
-        return frozenTeams;
-    }
-    return { bypassLabels, bypassTitlePattern, frozenTeams, frozenMessage: input.frozenMessage };
+    return { bypassLabels, bypassTitlePattern, frozenMessage: input.frozenMessage };
 }
 function splitLines(raw) {
     return raw

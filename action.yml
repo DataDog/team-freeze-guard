@@ -80,5 +80,4 @@ runs:
         # the dash rather than using an underscore.
         INPUT_BYPASS-LABELS: ${{ inputs.bypass-labels }}
         INPUT_BYPASS-TITLE-PATTERN: ${{ inputs.bypass-title-pattern }}
-        INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
         INPUT_FROZEN-MESSAGE: ${{ inputs.frozen-message }}

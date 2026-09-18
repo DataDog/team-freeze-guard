@@ -25,7 +25,6 @@ export interface PullRequestContext {
 export interface EvaluateInput {
   bypassLabelsInput: string | undefined
   bypassTitlePatternInput: string | undefined
-  frozenTeamsInput: string | undefined
   frozenMessageInput: string | undefined
   repoOwner: string
   repoName: string
@@ -49,9 +48,7 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
   const config = parseConfig({
     bypassLabels: input.bypassLabelsInput,
     bypassTitlePattern: input.bypassTitlePatternInput,
-    frozenTeams: input.frozenTeamsInput,
     frozenMessage: input.frozenMessageInput,
-    repoOwner: input.repoOwner,
   })
 
   if (config instanceof ConfigError) {
@@ -90,7 +87,7 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
   }
 
   const decision = decide({
-    frozenTeams: config.frozenTeams,
+    frozenTeams: [...input.teamMembership.keys()],
     bypassLabels: config.bypassLabels,
     bypassTitlePattern: config.bypassTitlePattern,
     prLabels: input.pullRequest.labels,
@@ -196,7 +193,6 @@ async function buildEvaluateInput(reporter: Reporter): Promise<EvaluateInput> {
   return {
     bypassLabelsInput: core.getInput('bypass-labels'),
     bypassTitlePatternInput: core.getInput('bypass-title-pattern'),
-    frozenTeamsInput: core.getInput('frozen-teams'),
     frozenMessageInput: core.getInput('frozen-message'),
     repoOwner: context.repo.owner,
     repoName: context.repo.repo,

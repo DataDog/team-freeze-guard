@@ -55,7 +55,7 @@ Because `pull_request_target` runs with privileges associated with the base repo
 
 ### Configuration source
 
-The evaluator retrieves configuration (`bypass-labels`, `bypass-title-pattern`, `frozen-teams`) through the `with` inputs of the `team-freeze-guard.yml` workflow definition. It does not rely on a workspace checkout.
+The action retrieves configuration through the `with` inputs of the `team-freeze-guard.yml` workflow definition: the evaluator step reads `bypass-labels` and `bypass-title-pattern` directly, while `frozen-teams` is consumed by the separate "Resolve frozen team membership" step and reaches the evaluator only as the resolved membership file's keys (see `docs/Internals/implementation-plan.md`'s PR 8). It does not rely on a workspace checkout.
 
 Because `pull_request_target` always evaluates the workflow definition from the base branch, a pull request cannot change its own `frozen-teams`, `bypass-labels`, or `bypass-title-pattern` by editing the workflow file on its own branch — the base-branch version is authoritative regardless of what the pull request contains. The pull request *title* itself, however, is untrusted input read from the event payload (like labels), not from this trusted configuration.
 
