@@ -45,8 +45,8 @@ on:
       - unlabeled
       - ready_for_review
       - edited
-    # Those event activate membership cache, preventing any external call in the
-    # main worklow. See ## Caching team membership
+    # These events warm the team-membership cache instead of evaluating a pull
+    # request; see "## Caching team membership" below.
   push:
     branches:
       - main  # default branch
@@ -114,7 +114,7 @@ An empty `frozen-teams` values means that no check is performed (no code freeze)
 | Permission | Reason |
 | --- | --- |
 | `id-token: write` | Allows `dd-octo-sts-action` to exchange the workflow's OIDC identity for a short-lived GitHub App token. |
-| `actions: write` | Allows saving the resolved team-membership cache entry for `push`, `scehdule` and `workflow_dispatch` events. |
+| `actions: write` | Allows saving the resolved team-membership cache entry for `push`, `schedule`, and `workflow_dispatch` events. |
 
 An action cannot grant these permissions to itself; they must be declared by the calling job.
 
@@ -131,9 +131,9 @@ On `push`, `schedule`, and `workflow_dispatch` events the action only resolves a
 
 Pick your own `schedule` cadence. `push` on your default branch keeps the cache in step with `frozen-teams` changes; `schedule` is what keeps it in step with GitHub team-membership changes made outside this repository, so choose an interval short enough for your incident process. `workflow_dispatch` lets you force a refresh on demand.
 
-This workflow is optional. Without it, every `pull_request_target` run resolves team membership itself, as before.
+Adding these triggers is optional. Without them, every `pull_request_target` run resolves team membership itself, as before.
 
-The GitHub Actions cache does not let an existing entry be overwritten in place, so the warm-up workflow deletes the previous entry for `frozen-teams`'s cache key (via `gh cache delete`) immediately before saving a fresh one — otherwise every warm-up run after the first would be a silent no-op and the cache would never actually reflect a GitHub team-membership change made outside this repository.
+The GitHub Actions cache does not let an existing entry be overwritten in place, so a `push`/`schedule`/`workflow_dispatch` run deletes the previous entry for `frozen-teams`'s cache key (via `gh cache delete`) immediately before saving a fresh one — otherwise every warm-up run after the first would be a silent no-op and the cache would never actually reflect a GitHub team-membership change made outside this repository.
 
 ## Enforcing the result with a ruleset
 
