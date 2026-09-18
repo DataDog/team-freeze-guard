@@ -28,7 +28,7 @@ A participant is:
 - The pull request author.
 - The GitHub-linked committer of the pull request's current head commit.
 
-Only the current head commit is checked, not the pull request's full commit history, and commit *authorship* is not checked, only the committer — see [`docs/limitations.md`](docs/limitations.md) for the tradeoffs this implies.
+Only the current head commit is checked, not the pull request's full commit history, and commit *authorship* is not checked, only the committer — see [`docs/limitations.md`](docs/limitations.md) for the tradeoffs this implies. If resolving that commit's committer keeps failing after retries, the check is skipped for that evaluation rather than failing the pull request closed.
 
 
 ## Workflow configuration
