@@ -32,6 +32,7 @@ runs:
       env:
         FROZEN_TEAMS: ${{ inputs.frozen-teams }}
       run: |
+        import hashlib
         import os
 
         frozen_teams_empty = not any(line.strip() for line in os.environ["FROZEN_TEAMS"].splitlines())
@@ -39,32 +40,102 @@ runs:
         if frozen_teams_empty:
             print("No frozen teams configured; passing without evaluating participants.")
 
+        # Changes immediately on a frozen-teams config change; how often the cached
+        # membership itself refreshes is up to the calling repository's push/schedule/
+        # workflow_dispatch cadence.
+        frozen_teams_hash = hashlib.sha256(os.environ["FROZEN_TEAMS"].encode()).hexdigest()[:16]
+        cache_key = f"team-freeze-guard-membership-{frozen_teams_hash}"
+
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
             f.write(f"skip={'true' if frozen_teams_empty else 'false'}\n")
+            f.write(f"cache-key={cache_key}\n")
+
+    # Only push/workflow_dispatch/schedule runs get a writable Actions cache token;
+    # pull_request/pull_request_target runs get a read-only one, so a save from those
+    # always fails (see docs/Internals/architecture.md's "Team-membership caching" section).
+    # A restore is safe and useful on every event, including pull_request_target: it lets
+    # such a run reuse membership data warmed by a push/schedule/workflow_dispatch run,
+    # skipping both the OIDC exchange and the team-membership API calls below on a hit.
+    - name: Restore cached team membership
+      id: restore-team-membership-cache
+      if: steps.early-checks.outputs.skip != 'true'
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ${{ runner.temp }}/team-freeze-guard-team-membership.json
+        key: ${{ steps.early-checks.outputs.cache-key }}
 
     # Trust policy: DataDog/.github/.github/chainguard/team-freeze-guard.read-org-members.sts.yaml
     # (see docs/Internals/octo-sts.md). The org scope and policy are intentionally
-    # not exposed as repository inputs (see README's "Required workflow permissions"
+    # not exposed as repository inputs (see README's "Required job permissions"
     # section), so this is hardcoded here rather than configurable per caller.
     - name: Exchange OIDC identity for an org-scoped GitHub token
       id: octo-sts
-      if: steps.early-checks.outputs.skip != 'true'
+      if: >-
+        steps.early-checks.outputs.skip != 'true' &&
+        (steps.restore-team-membership-cache.outputs.cache-hit != 'true' ||
+         contains(fromJSON('["push","workflow_dispatch","schedule"]'), github.event_name))
       uses: DataDog/dd-octo-sts-action@c85802a58e202b7e764b5441e4378c76043c8108 # v1.0.5
       with:
         scope: DataDog
         policy: team-freeze-guard.read-org-members
 
+    # Resolves frozen-team membership into a JSON file, separately from policy evaluation,
+    # so this step's result can be cached across runs (see the cache steps above/below).
+    # Same condition as the OIDC exchange above: a cache hit is only trusted to skip this
+    # on events that cannot themselves refresh the cache.
+    - name: Resolve frozen team membership
+      if: >-
+        steps.early-checks.outputs.skip != 'true' &&
+        (steps.restore-team-membership-cache.outputs.cache-hit != 'true' ||
+         contains(fromJSON('["push","workflow_dispatch","schedule"]'), github.event_name))
+      shell: bash
+      run: node "${{ github.action_path }}/dist/resolve-team-membership/index.js"
+      env:
+        ORG_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        TEAM_MEMBERSHIP_FILE: ${{ runner.temp }}/team-freeze-guard-team-membership.json
+        # @actions/core's getInput() only replaces spaces (not dashes) before
+        # uppercasing an input name to its INPUT_ env var, so this must keep
+        # the dash rather than using an underscore.
+        INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
+
+    # actions/cache/save cannot overwrite an existing entry for the same key, so a warm-up
+    # run has to delete the previous entry itself before saving, or every run after the
+    # first would be a silent no-op and the cache would never actually refresh. Errors
+    # (most commonly: no entry exists yet, on the very first warm-up run) are ignored.
+    - name: Delete stale team membership cache entry
+      if: >-
+        steps.early-checks.outputs.skip != 'true' &&
+        contains(fromJSON('["push","workflow_dispatch","schedule"]'), github.event_name)
+      shell: bash
+      continue-on-error: true
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: gh cache delete "${{ steps.early-checks.outputs.cache-key }}" --repo "${{ github.repository }}"
+
+    # Only these events get a writable Actions cache token (see the restore step above),
+    # so only they can seed the cache that pull_request_target runs later read from.
+    - name: Save team membership cache
+      if: >-
+        steps.early-checks.outputs.skip != 'true' &&
+        contains(fromJSON('["push","workflow_dispatch","schedule"]'), github.event_name)
+      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ${{ runner.temp }}/team-freeze-guard-team-membership.json
+        key: ${{ steps.early-checks.outputs.cache-key }}
+
+    # push/workflow_dispatch/schedule runs exist only to warm the team-membership cache
+    # above; they carry no pull request to evaluate, so this step is skipped for them.
     - name: Evaluate team freeze policy
-      if: steps.early-checks.outputs.skip != 'true'
+      if: >-
+        steps.early-checks.outputs.skip != 'true' &&
+        !contains(fromJSON('["push","workflow_dispatch","schedule"]'), github.event_name)
       shell: bash
       run: node "${{ github.action_path }}/dist/index.js"
       env:
-        GITHUB_TOKEN: ${{ github.token }}
-        ORG_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        TEAM_MEMBERSHIP_FILE: ${{ runner.temp }}/team-freeze-guard-team-membership.json
         # @actions/core's getInput() only replaces spaces (not dashes) before
         # uppercasing an input name to its INPUT_ env var, so this must keep
         # the dash rather than using an underscore.
         INPUT_BYPASS-LABELS: ${{ inputs.bypass-labels }}
         INPUT_BYPASS-TITLE-PATTERN: ${{ inputs.bypass-title-pattern }}
-        INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
         INPUT_FROZEN-MESSAGE: ${{ inputs.frozen-message }}

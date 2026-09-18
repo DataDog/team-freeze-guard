@@ -4,9 +4,7 @@ The evaluator should have unit tests covering:
 
 - Empty frozen-team lists.
 - Frozen and non-frozen PR authors.
-- Frozen and non-frozen head commit committers.
-- Duplicate identities and overlapping team membership.
-- Mapped and unmapped commit identities.
+- Overlapping team membership.
 - Label presence and removal.
 - Case-sensitive label matching.
 - Multiple configured `bypass-labels` (any-match).

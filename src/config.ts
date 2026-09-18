@@ -6,7 +6,6 @@
 export interface Config {
   bypassLabels: string[]
   bypassTitlePattern: string
-  frozenTeams: string[]
   frozenMessage: string
 }
 
@@ -20,22 +19,15 @@ export class ConfigError extends Error {
 export interface ParseConfigInput {
   bypassLabels: string | undefined
   bypassTitlePattern: string | undefined
-  frozenTeams: string | undefined
   frozenMessage: string | undefined
-  repoOwner: string
 }
 
 const TEAM_ENTRY_PATTERN = /^@([^/]+)\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/
 
 export function parseConfig(input: ParseConfigInput): Config | ConfigError {
-  if (
-    input.bypassLabels === undefined ||
-    input.bypassTitlePattern === undefined ||
-    input.frozenTeams === undefined ||
-    input.frozenMessage === undefined
-  ) {
+  if (input.bypassLabels === undefined || input.bypassTitlePattern === undefined || input.frozenMessage === undefined) {
     return new ConfigError(
-      'The "bypass-labels", "bypass-title-pattern", "frozen-teams" and "frozen-message" inputs are required and must be provided by the calling workflow.',
+      'The "bypass-labels", "bypass-title-pattern" and "frozen-message" inputs are required and must be provided by the calling workflow.',
     )
   }
 
@@ -45,12 +37,7 @@ export function parseConfig(input: ParseConfigInput): Config | ConfigError {
     return bypassTitlePattern
   }
 
-  const frozenTeams = parseFrozenTeams(input.frozenTeams, input.repoOwner)
-  if (frozenTeams instanceof ConfigError) {
-    return frozenTeams
-  }
-
-  return { bypassLabels, bypassTitlePattern, frozenTeams, frozenMessage: input.frozenMessage }
+  return { bypassLabels, bypassTitlePattern, frozenMessage: input.frozenMessage }
 }
 
 function splitLines(raw: string): string[] {

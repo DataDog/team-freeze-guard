@@ -19,26 +19,17 @@ The action verifies that at least one of the configured `bypass-labels` is prese
 
 If a bypass mechanism represents an approval rather than a self-declared classification, use an additional mechanism to ensure it was applied or approved by an Incident Commander or CI owner. Possible mechanisms include a bot-owned command, an authorized review, or validation of the label or edit event actor.
 
-## `Co-authored-by` trailers are not evaluated
+## Only the pull request author is checked
 
-Participant identity resolution uses the GitHub-linked commit committer only (see below). A frozen engineer's contribution recorded solely as a `Co-authored-by:` trailer in a commit message is not detected, since GitHub does not surface trailer identities as a distinct author or committer on the commit. This is an accepted scope limitation, not a bypass GitHub itself can close: closing it would require parsing commit message trailers and mapping free-text identities to GitHub accounts, which is unreliable.
+Participant identity resolution considers only `pull_request.user.login` — the pull request author. It does not look at commit committers, commit authors, or `Co-authored-by:` trailers.
 
-## Commit authorship is not checked
+The consequence: a frozen-team engineer can ask a teammate to open the pull request and commit on their behalf, or to add commits of their own to someone else's pull request, without appearing as the author, and the check cannot detect this. This is treated as an accepted gap, not a technical bypass to close: circumventing a freeze by asking a colleague to front a change on your behalf is a process/HR issue, not something this check is expected to prevent.
 
-Participant identity resolution only considers the pull request author and the GitHub-linked *committer* of the current head commit — not the commit *author*. This is a deliberate simplicity tradeoff: checking committer alone is simpler to implement and reason about than also resolving and deduplicating commit authors.
+## Cached team membership is effectively public
 
-The consequence: a frozen-team engineer can ask a teammate to open the pull request and commit on their behalf (e.g. via `git commit --author`), which the check cannot detect — the frozen engineer never appears as the PR author or as a committer. This is treated as an accepted gap, not a technical bypass to close: circumventing a freeze by asking a colleague to front a change on your behalf is a process/HR issue, not something this check is expected to prevent.
+The optional team-membership cache (see the README's "Caching team membership" section) stores every frozen team's full member list in a plain GitHub Actions cache entry. Actions cache **restore** is available to any workflow run in the repository with a valid cache token, even a read-only one — including a `pull_request`-triggered workflow contributed by a fork. The cache key is derived only from the `frozen-teams` input, which is public in the checked-in workflow file, so there is no secrecy in the key itself.
 
-## Only the head commit is checked
-
-Participant identity resolution fetches only the pull request's current head commit (`pull_request.head.sha`), not every commit in the pull request's history. This is a deliberate cost/simplicity tradeoff: one API call per evaluation instead of a paginated list of every commit.
-
-The consequence: a commit's committer is only checked at the moment it becomes (or is part of establishing) the head commit under evaluation. In practice this means:
-
-- A `synchronize` event re-evaluates the new head commit each time commits are pushed, so an individual push is checked as it happens.
-- However, if a pull request is opened from a branch that already contained multiple commits (or a force-push replaces several commits at once), only the resulting head commit's committer is checked — the committers of the other, non-head commits bundled into that same event are not.
-
-This is an accepted scope limitation, not a bypass GitHub itself can close: checking every commit would require paginating the full commit list on every evaluation, which is the API cost this design deliberately avoids.
+The practical consequence: once a repository adds the `push`/`schedule`/`workflow_dispatch` triggers that warm this cache, anyone able to open a pull request against the repository can add a workflow step that restores the cache entry and reads the full membership of every frozen team. This is an accepted tradeoff of enabling the cache, not a bug to fix — do not enable the cache for a repository whose frozen-team membership must not be exposed this way.
 
 ## Merge queues
 

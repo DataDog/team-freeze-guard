@@ -1,9 +1,10 @@
 ## Architecture
 
-`team-freeze-guard` is a composite GitHub Action containing two logical components:
+`team-freeze-guard` is a composite GitHub Action containing three logical components, run as three sequential steps (after an "Early checks" step that can skip all of them when `frozen-teams` is empty — see `docs/Internals/README.md`'s Decision algorithm):
 
 1. **Token retrieval:** `DataDog/dd-octo-sts-action` exchanges the job's GitHub OIDC identity for a short-lived, organization-scoped GitHub App token to read membership data.
-2. **Policy evaluation:** a bundled Node.js program reads the repository configuration and pull request state, resolves team membership, and succeeds or fails the Action job.
+2. **Team membership resolution:** a bundled Node.js program (`dist/resolve-team-membership/index.js`) uses that token to list the members of every configured frozen team and writes the result to a JSON file on the runner's filesystem (`runner.temp`).
+3. **Policy evaluation:** a second bundled Node.js program (`dist/index.js`) reads the repository configuration and pull request state, reads the team-membership JSON file written by step 2 (it does not call the Teams API itself), and succeeds or fails the Action job.
 
 ```text
 Trusted pull_request_target workflow
@@ -18,21 +19,27 @@ Trusted pull_request_target workflow
  Short-lived token with Members: read
                 |
                 v
+   Team membership resolution ---> Team membership API
+                |
+                v
+   Team membership JSON file (runner.temp)
+                |
+                v
        Team freeze evaluator
         /              \
        v                v
-Repository/PR APIs   Team membership API
+Repository/PR APIs   Team membership JSON file
        \                /
         v              v
        Pass or fail required check
 ```
 
-The consumer sees a single action call, while token retrieval remains centralized and does not require a PAT, repository secret, or GitHub App private key.
+The consumer sees a single action call, while token retrieval remains centralized and does not require a PAT, repository secret, or GitHub App private key. The JSON file hand-off between steps 2 and 3 also doubles as the payload for the optional team-membership cache (see "Team-membership caching" below).
 
 
 ## Why a composite action
 
-A JavaScript action cannot directly invoke another GitHub Action. A composite action can call `DataDog/dd-octo-sts-action` and then run the bundled evaluator as a second step.
+A JavaScript action cannot directly invoke another GitHub Action. A composite action can call `DataDog/dd-octo-sts-action` and then run the bundled team-membership resolution and evaluator programs as subsequent steps.
 
 This provides a one-step consumer interface while preserving the existing Octo STS implementation and trust policies.
 
@@ -55,11 +62,19 @@ Because `pull_request_target` runs with privileges associated with the base repo
 
 ### Configuration source
 
-The evaluator retrieves configuration (`bypass-labels`, `bypass-title-pattern`, `frozen-teams`) through the `with` inputs of the `team-freeze-guard.yml` workflow definition. It does not rely on a workspace checkout.
+The action retrieves configuration through the `with` inputs of the `team-freeze-guard.yml` workflow definition: the evaluator step reads `bypass-labels` and `bypass-title-pattern` directly, while `frozen-teams` is consumed by the separate "Resolve frozen team membership" step and reaches the evaluator only as the resolved membership file's keys (see `docs/Internals/implementation-plan.md`'s PR 8). It does not rely on a workspace checkout.
 
 Because `pull_request_target` always evaluates the workflow definition from the base branch, a pull request cannot change its own `frozen-teams`, `bypass-labels`, or `bypass-title-pattern` by editing the workflow file on its own branch — the base-branch version is authoritative regardless of what the pull request contains. The pull request *title* itself, however, is untrusted input read from the event payload (like labels), not from this trusted configuration.
 
 
-### No GitHub Actions cache
+### Team-membership caching
 
-`actions/cache` cannot be used to cache anything across runs of this action (e.g. resolved team membership), and never will be able to, as long as the trigger is `pull_request_target`. GitHub issues read-only Actions cache tokens for `pull_request`/`pull_request_target`-triggered runs ("read-only Actions cache for untrusted triggers"), so a save always fails with `cache write denied: token has no writable scopes` — regardless of the calling workflow's declared `permissions:`, of repo-level cache settings, or of how the cache action is invoked. This was tried once (team-membership caching, see `docs/Internals/implementation-plan.md`'s PR 9) and reverted after live e2e testing confirmed the write is always denied.
+`actions/cache` cannot save anything from a `pull_request_target`-triggered run, and never will be able to, regardless of the calling workflow's declared `permissions:`, of repo-level cache settings, or of how the cache action is invoked. GitHub issues read-only Actions cache tokens for `pull_request`/`pull_request_target`-triggered runs ("read-only Actions cache for untrusted triggers"), so a save from one of these runs always fails with `cache write denied: token has no writable scopes`. This was tried once with the write happening from the same `pull_request_target` run (see `docs/Internals/implementation-plan.md`'s PR 9) and reverted after live e2e testing confirmed the write is always denied.
+
+A `pull_request_target` run can still *restore* a cache entry — only the write token is restricted — so `action.yml`'s "Restore cached team membership" step runs unconditionally. What writes that entry is a separate, optional workflow the consumer adds, triggered by `push`, `schedule`, or `workflow_dispatch`: none of those triggers are subject to the read-only restriction, so `action.yml`'s "Save team membership cache" step runs only for them (see the README's "Caching team membership" section). The cache key is a hash of `frozen-teams` only, with no time component, so a `pull_request_target` run's restore either hits data written by the most recent successful warm-up run for that exact `frozen-teams` value, or misses and falls back to resolving membership itself.
+
+`actions/cache/save` cannot overwrite an existing entry for a key that's already occupied — it just logs a warning and keeps the old entry. Since this design intentionally reuses the same key across every warm-up run (there is no time component), each warm-up run first deletes any existing entry for that key (`gh cache delete`, via the "Delete stale team membership cache entry" step) before saving, so the cache actually refreshes on the consumer's own `push`/`schedule`/`workflow_dispatch` cadence instead of only ever writing once.
+
+Because the restore step above is intentionally unconditional and the cache key is derived only from the (public) `frozen-teams` input, the cached membership file is not confined to trusted `pull_request_target` runs: any workflow run in the repository that holds a cache token, including one added to a `pull_request` workflow by a fork, can restore it and read every frozen team's full member list. This is a deliberate tradeoff of enabling the cache, not something this design attempts to close — see `docs/limitations.md`'s "Cached team membership is effectively public" entry.
+
+The delete-then-save sequence above is a plain overwrite with no version or generation check, so it is only correct if warm-up runs never overlap: if a slower run is still resolving membership when a faster run finishes and saves, the slower run's later delete-and-save will overwrite the faster run's fresher entry with its own older snapshot, and that stale snapshot is what subsequent `pull_request_target` runs then restore. `action.yml` cannot prevent this by itself, since GitHub Actions concurrency is declared per-workflow, not per-composite-action; the README's example workflow instead declares a `concurrency` group that queues `push`/`schedule`/`workflow_dispatch` runs against each other (with `cancel-in-progress: false`, so a run always finishes rather than being cut off mid delete/save), while giving each `pull_request_target` run its own group keyed by pull request number so PR evaluations are unaffected.

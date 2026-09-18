@@ -31912,7 +31912,7 @@ function parseFrozenTeams(raw, repoOwner) {
 
 /***/ }),
 
-/***/ 7033:
+/***/ 4769:
 /***/ ((__unused_webpack_module, exports) => {
 
 "use strict";
@@ -31922,265 +31922,65 @@ function parseFrozenTeams(raw, repoOwner) {
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.hasBypassLabel = hasBypassLabel;
-exports.matchesBypassTitlePattern = matchesBypassTitlePattern;
-exports.evaluateBypassConditions = evaluateBypassConditions;
-exports.shouldBypass = shouldBypass;
-exports.decide = decide;
-function hasBypassLabel(bypassLabels, prLabels) {
-    const labels = new Set(prLabels);
-    return bypassLabels.some((label) => labels.has(label));
-}
-function matchesBypassTitlePattern(bypassTitlePattern, prTitle) {
-    return new RegExp(bypassTitlePattern).test(prTitle);
-}
-// Evaluates each bypass mechanism independently, so callers can report exactly
-// which configured mechanism(s) are satisfied and which are not.
-function evaluateBypassConditions(input) {
-    const labelsConfigured = input.bypassLabels.length > 0;
-    const titlePatternConfigured = input.bypassTitlePattern.length > 0;
-    return [
-        {
-            mechanism: 'bypass-labels',
-            configured: labelsConfigured,
-            satisfied: !labelsConfigured || hasBypassLabel(input.bypassLabels, input.prLabels),
-        },
-        {
-            mechanism: 'bypass-title-pattern',
-            configured: titlePatternConfigured,
-            satisfied: !titlePatternConfigured || matchesBypassTitlePattern(input.bypassTitlePattern, input.prTitle),
-        },
-    ];
-}
-// A configured bypass mechanism (label or title pattern) must be satisfied when
-// present; bypass mechanisms that are not configured are treated as satisfied,
-// so a single configured mechanism can bypass on its own, but when several are
-// configured, all of them must be satisfied.
-function shouldBypass(input) {
-    const conditions = evaluateBypassConditions(input);
-    return conditions.some((condition) => condition.configured) && conditions.every((condition) => condition.satisfied);
-}
-function decide(input) {
-    if (shouldBypass({
-        bypassLabels: input.bypassLabels,
-        bypassTitlePattern: input.bypassTitlePattern ?? '',
-        prLabels: input.prLabels,
-        prTitle: input.prTitle ?? '',
-    })) {
-        return { outcome: 'pass', matchedTeams: [], matches: [] };
+exports.TeamResolutionError = void 0;
+exports.resolveTeamMembership = resolveTeamMembership;
+class TeamResolutionError extends Error {
+    constructor(message, options) {
+        super(message, options);
+        this.name = 'TeamResolutionError';
     }
-    const participants = new Set(input.participants);
-    const matches = [];
-    const matchedTeams = input.frozenTeams.filter((team) => {
-        const members = input.teamMembership.get(team);
-        if (!members) {
-            return false;
-        }
-        let matched = false;
-        for (const participant of participants) {
-            if (members.has(participant)) {
-                matches.push({ participant, team });
-                matched = true;
-            }
-        }
-        return matched;
-    });
-    if (matchedTeams.length === 0) {
-        return { outcome: 'pass', matchedTeams: [], matches: [] };
-    }
-    return { outcome: 'fail', matchedTeams, matches };
 }
-
-
-/***/ }),
-
-/***/ 1730:
-/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
-
-"use strict";
-
-// Unless explicitly stated otherwise all files in this repository are licensed
-// under the Apache License Version 2.0.
-// This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2026 Datadog, Inc.
-var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    var desc = Object.getOwnPropertyDescriptor(m, k);
-    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
-      desc = { enumerable: true, get: function() { return m[k]; } };
+exports.TeamResolutionError = TeamResolutionError;
+const TEAM_HANDLE_PATTERN = /^@([^/]+)\/([a-z0-9](?:[a-z0-9-]*[a-z0-9])?)$/;
+async function resolveTeamMembership(input) {
+    const membership = new Map();
+    for (const teamHandle of input.teamHandles) {
+        const teamSlug = extractTeamSlug(teamHandle, input.org);
+        membership.set(teamHandle, await listTeamMembers(input.octokit, input.org, teamHandle, teamSlug));
     }
-    Object.defineProperty(o, k2, desc);
-}) : (function(o, m, k, k2) {
-    if (k2 === undefined) k2 = k;
-    o[k2] = m[k];
-}));
-var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
-    Object.defineProperty(o, "default", { enumerable: true, value: v });
-}) : function(o, v) {
-    o["default"] = v;
-});
-var __importStar = (this && this.__importStar) || (function () {
-    var ownKeys = function(o) {
-        ownKeys = Object.getOwnPropertyNames || function (o) {
-            var ar = [];
-            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
-            return ar;
-        };
-        return ownKeys(o);
-    };
-    return function (mod) {
-        if (mod && mod.__esModule) return mod;
-        var result = {};
-        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
-        __setModuleDefault(result, mod);
-        return result;
-    };
-})();
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.evaluate = evaluate;
-exports.run = run;
-const core = __importStar(__nccwpck_require__(7484));
-const github_1 = __nccwpck_require__(3228);
-const config_1 = __nccwpck_require__(2973);
-const decision_1 = __nccwpck_require__(7033);
-const reporting_1 = __nccwpck_require__(9953);
-const team_membership_file_1 = __nccwpck_require__(4601);
-async function evaluate(input) {
+    return membership;
+}
+function extractTeamSlug(teamHandle, org) {
+    const match = TEAM_HANDLE_PATTERN.exec(teamHandle);
+    if (!match) {
+        throw new TeamResolutionError(`"${teamHandle}" is not a valid "@org/team-slug" handle.`);
+    }
+    const [, handleOrg, slug] = match;
+    if (handleOrg !== org) {
+        throw new TeamResolutionError(`"${teamHandle}" belongs to organization "${handleOrg}", but team membership is being resolved for organization "${org}".`);
+    }
+    return slug;
+}
+async function listTeamMembers(octokit, org, teamHandle, teamSlug) {
     try {
-        await evaluateOrThrow(input);
+        const members = await octokit.paginate(octokit.rest.teams.listMembersInOrg, {
+            org,
+            team_slug: teamSlug,
+            per_page: 100,
+        });
+        return new Set(members.map((member) => member.login));
     }
     catch (error) {
-        await (0, reporting_1.reportFailClosed)(input.reporter, error);
-    }
-}
-async function evaluateOrThrow(input) {
-    const config = (0, config_1.parseConfig)({
-        bypassLabels: input.bypassLabelsInput,
-        bypassTitlePattern: input.bypassTitlePatternInput,
-        frozenMessage: input.frozenMessageInput,
-    });
-    if (config instanceof config_1.ConfigError) {
-        input.reporter.setFailed(config.message);
-        return;
-    }
-    if (!input.pullRequest) {
-        throw new Error('This event does not carry a pull request context.');
-    }
-    if ((0, decision_1.shouldBypass)({
-        bypassLabels: config.bypassLabels,
-        bypassTitlePattern: config.bypassTitlePattern,
-        prLabels: input.pullRequest.labels,
-        prTitle: input.pullRequest.title,
-    })) {
-        input.reporter.info('The configured bypass conditions are satisfied; passing without evaluating participants.');
-        return;
-    }
-    const decision = (0, decision_1.decide)({
-        frozenTeams: [...input.teamMembership.keys()],
-        bypassLabels: config.bypassLabels,
-        bypassTitlePattern: config.bypassTitlePattern,
-        prLabels: input.pullRequest.labels,
-        prTitle: input.pullRequest.title,
-        participants: [input.pullRequest.authorLogin],
-        teamMembership: input.teamMembership,
-    });
-    if (decision.outcome === 'pass') {
-        input.reporter.info('No participant belongs to a frozen team; passing.');
-        return;
-    }
-    await reportFailure(decision, config, input.pullRequest, input.reporter);
-}
-async function reportFailure(decision, config, pullRequest, reporter) {
-    const bypassConditions = (0, decision_1.evaluateBypassConditions)({
-        bypassLabels: config.bypassLabels,
-        bypassTitlePattern: config.bypassTitlePattern,
-        prLabels: pullRequest.labels,
-        prTitle: pullRequest.title,
-    });
-    await (0, reporting_1.safeWriteSummary)(reporter, buildFailureSummary(decision, config, bypassConditions));
-    reporter.setFailed(buildFailureMessage(decision, config, bypassConditions));
-}
-function buildFailureHeading(config) {
-    return /[.!?]$/.test(config.frozenMessage) ? config.frozenMessage : `${config.frozenMessage}.`;
-}
-function buildMatchLines(decision) {
-    return decision.matches.map((match) => `- @${match.participant} belongs to frozen team ${match.team}.`);
-}
-// Reports the current status of every configured bypass mechanism, one line
-// each, so the reader can see exactly which one(s) are still missing without
-// having to infer it from the overall pass/fail outcome. An unconfigured
-// mechanism does not gate the bypass, so it is omitted rather than reported.
-function buildBypassConditionLines(config, bypassConditions) {
-    const configured = bypassConditions.filter((condition) => condition.configured);
-    if (configured.length === 0) {
-        return ['No bypass mechanism is configured for this repository; contact an administrator to proceed.'];
-    }
-    return configured.map((condition) => {
-        if (condition.mechanism === 'bypass-labels') {
-            const labels = config.bypassLabels.map((label) => `\`${label}\``).join(', ');
-            return condition.satisfied
-                ? '- Bypass label: satisfied.'
-                : `- Bypass label: not satisfied — if your PR is meant to fix the freeze root cause, please add one of these labels: ${labels}.`;
+        const status = getHttpStatus(error);
+        if (status === 404) {
+            throw new TeamResolutionError(`Team "${teamHandle}" is unknown.`, { cause: error });
         }
-        return condition.satisfied
-            ? '- Bypass title pattern: satisfied.'
-            : `- Bypass title pattern: not satisfied — if your PR is meant to fix the freeze root cause, please correct the PR title to match \`${config.bypassTitlePattern}\`.`;
-    });
-}
-function buildFailureMessage(decision, config, bypassConditions) {
-    return [buildFailureHeading(config), ...buildMatchLines(decision), ...buildBypassConditionLines(config, bypassConditions)].join(' ');
-}
-function buildFailureSummary(decision, config, bypassConditions) {
-    const lines = [
-        buildFailureHeading(config),
-        '',
-        ...buildMatchLines(decision),
-        '',
-        ...buildBypassConditionLines(config, bypassConditions),
-    ];
-    return lines.join('\n');
-}
-function run() {
-    const reporter = (0, reporting_1.buildReporter)();
-    runWithReporter(reporter).catch(() => {
-        // reportFailClosed handles reporting internally and does not itself throw
-        // under normal operation; this is a last-resort backstop.
-        core.setFailed(reporting_1.FAIL_CLOSED_MESSAGE);
-    });
-}
-async function runWithReporter(reporter) {
-    try {
-        await evaluate(await buildEvaluateInput(reporter));
-    }
-    catch (error) {
-        await (0, reporting_1.reportFailClosed)(reporter, error);
+        if (status === 403) {
+            throw new TeamResolutionError(`Team "${teamHandle}" is inaccessible with the current token.`, {
+                cause: error,
+            });
+        }
+        throw new TeamResolutionError(`Failed to resolve members of team "${teamHandle}".`, {
+            cause: error,
+        });
     }
 }
-async function buildEvaluateInput(reporter) {
-    return {
-        bypassLabelsInput: core.getInput('bypass-labels'),
-        bypassTitlePatternInput: core.getInput('bypass-title-pattern'),
-        frozenMessageInput: core.getInput('frozen-message'),
-        pullRequest: extractPullRequestContext(),
-        teamMembership: await (0, team_membership_file_1.readTeamMembershipFile)((0, reporting_1.getRequiredEnv)('TEAM_MEMBERSHIP_FILE')),
-        reporter,
-    };
-}
-function extractPullRequestContext() {
-    const pullRequest = github_1.context.payload.pull_request;
-    if (!pullRequest?.user?.login) {
-        return undefined;
+function getHttpStatus(error) {
+    if (typeof error === 'object' && error !== null && 'status' in error) {
+        const { status } = error;
+        return typeof status === 'number' ? status : null;
     }
-    return {
-        authorLogin: pullRequest.user.login,
-        labels: (pullRequest.labels ?? [])
-            .map((label) => label.name)
-            .filter((name) => typeof name === 'string'),
-        title: pullRequest.title ?? '',
-    };
-}
-if (require.main === require.cache[eval('__filename')]) {
-    run();
+    return null;
 }
 
 
@@ -32282,6 +32082,110 @@ function getRequiredEnv(name) {
         throw new Error(`Missing required environment variable "${name}".`);
     }
     return value;
+}
+
+
+/***/ }),
+
+/***/ 7018:
+/***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
+
+"use strict";
+
+// Unless explicitly stated otherwise all files in this repository are licensed
+// under the Apache License Version 2.0.
+// This product includes software developed at Datadog (https://www.datadoghq.com/).
+// Copyright 2026 Datadog, Inc.
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
+Object.defineProperty(exports, "__esModule", ({ value: true }));
+exports.resolveMembership = resolveMembership;
+exports.run = run;
+const core = __importStar(__nccwpck_require__(7484));
+const github_1 = __nccwpck_require__(3228);
+const config_1 = __nccwpck_require__(2973);
+const teams_1 = __nccwpck_require__(4769);
+const reporting_1 = __nccwpck_require__(9953);
+const team_membership_file_1 = __nccwpck_require__(4601);
+async function resolveMembership(input) {
+    try {
+        await resolveMembershipOrThrow(input);
+    }
+    catch (error) {
+        await (0, reporting_1.reportFailClosed)(input.reporter, error);
+    }
+}
+async function resolveMembershipOrThrow(input) {
+    const frozenTeams = (0, config_1.parseFrozenTeamsInput)(input.frozenTeamsInput, input.repoOwner);
+    if (frozenTeams instanceof config_1.ConfigError) {
+        input.reporter.setFailed(frozenTeams.message);
+        return;
+    }
+    const teamMembership = await (0, teams_1.resolveTeamMembership)({
+        octokit: input.orgOctokit,
+        org: input.repoOwner,
+        teamHandles: frozenTeams,
+    });
+    await (0, team_membership_file_1.writeTeamMembershipFile)(input.outputPath, teamMembership);
+}
+function run() {
+    const reporter = (0, reporting_1.buildReporter)();
+    runWithReporter(reporter).catch(() => {
+        // reportFailClosed handles reporting internally and does not itself throw
+        // under normal operation; this is a last-resort backstop.
+        core.setFailed(reporting_1.FAIL_CLOSED_MESSAGE);
+    });
+}
+async function runWithReporter(reporter) {
+    try {
+        await resolveMembership(buildResolveMembershipInput(reporter));
+    }
+    catch (error) {
+        await (0, reporting_1.reportFailClosed)(reporter, error);
+    }
+}
+function buildResolveMembershipInput(reporter) {
+    return {
+        frozenTeamsInput: core.getInput('frozen-teams'),
+        repoOwner: github_1.context.repo.owner,
+        orgOctokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('ORG_TOKEN')),
+        outputPath: (0, reporting_1.getRequiredEnv)('TEAM_MEMBERSHIP_FILE'),
+        reporter,
+    };
+}
+if (require.main === require.cache[eval('__filename')]) {
+    run();
 }
 
 
@@ -37429,7 +37333,7 @@ legacyRestEndpointMethods.VERSION = VERSION;
 /******/ 	// startup
 /******/ 	// Load entry module and return exports
 /******/ 	// This entry module is referenced by other modules so it can't be inlined
-/******/ 	var __webpack_exports__ = __nccwpck_require__(1730);
+/******/ 	var __webpack_exports__ = __nccwpck_require__(7018);
 /******/ 	module.exports = __webpack_exports__;
 /******/ 	
 /******/ })()

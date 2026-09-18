@@ -2,7 +2,7 @@
 
 `team-freeze-guard` enforces per-team code freezes on GitHub pull requests.
 
-When a pull request author or commit committer belongs to a configured frozen GitHub team, the pull request must satisfy every configured bypass mechanism: it must carry at least one of the configured bypass labels (when `bypass-labels` is set), and its title must match the configured `bypass-title-pattern` (when set). Otherwise, the action fails with `Your team is frozen`, and a required GitHub ruleset check prevents the pull request from being merged.
+When a pull request's author belongs to a configured frozen GitHub team, the pull request must satisfy every configured bypass mechanism: it must carry at least one of the configured bypass labels (when `bypass-labels` is set), and its title must match the configured `bypass-title-pattern` (when set). Otherwise, the action fails with `Your team is frozen`, and a required GitHub ruleset check prevents the pull request from being merged.
 
 The action uses [DataDog/dd-octo-sts-action](https://github.com/DataDog/dd-octo-sts-action) internally to obtain a short-lived GitHub token with organization membership permissions. It does not require a personal access token or a GitHub App private key in the consuming repository. This GitHub Action does not contain any other mechanism for obtaining this membership permission, which means it is meant to work only on DataDog's org repositories.
 
@@ -23,12 +23,7 @@ flowchart TD
     C -->|Yes| FAIL["Fail"]
 ```
 
-A participant is:
-
-- The pull request author.
-- The GitHub-linked committer of the pull request's current head commit.
-
-Only the current head commit is checked, not the pull request's full commit history, and commit *authorship* is not checked, only the committer — see [`docs/limitations.md`](docs/limitations.md) for the tradeoffs this implies.
+The only participant checked is the pull request author (`pull_request.user.login`). Commit committers, commit authors, and `Co-authored-by:` trailers are not checked — see [`docs/limitations.md`](docs/limitations.md) for the tradeoffs this implies.
 
 
 ## Workflow configuration
@@ -50,15 +45,35 @@ on:
       - unlabeled
       - ready_for_review
       - edited
+    # These events warm the team-membership cache instead of evaluating a pull
+    # request; see "## Caching team membership" below.
+  push:
+    branches:
+      - main  # default branch
+    paths:
+      - .github/workflows/team-freeze-guard.yml
+  schedule:
+    - cron: '*/30 * * * *'  # if team composition changes
+  workflow_dispatch:  # force cache update
 
-permissions:
-  id-token: write
-  contents: read
+concurrency:
+  # Serializes push/schedule/workflow_dispatch warm-up runs against each other so a
+  # slower run can never finish after a faster one and overwrite its fresher cache
+  # entry with a stale one. Each pull_request_target run gets its own group by PR
+  # number so PR evaluations are never queued behind cache warm-ups or each other.
+  group: >-
+    ${{ contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event_name)
+        && 'team-freeze-guard-cache-warmup'
+        || format('team-freeze-guard-pr-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: false
 
 jobs:
   team-freeze-guard:
     name: Team freeze guard
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      actions: write  # for team membership cache
 
     steps:
       - uses: DataDog/team-freeze-guard@<full-commit-sha>
@@ -105,18 +120,35 @@ An empty `frozen-teams` values means that no check is performed (no code freeze)
 | `frozen-message` | No | `Your team is frozen` | Message used as the check failure reason and summary heading when a frozen team participates. |
 
 
-### Required workflow permissions
+### Required job permissions
 
 | Permission | Reason |
 | --- | --- |
 | `id-token: write` | Allows `dd-octo-sts-action` to exchange the workflow's OIDC identity for a short-lived GitHub App token. |
-| `contents: read` | Allows the default `GITHUB_TOKEN` to read repository and commit data needed to resolve the head commit's committer. |
+| `actions: write` | Allows saving the resolved team-membership cache entry for `push`, `schedule`, and `workflow_dispatch` events. |
 
-An action cannot grant these permissions to itself; they must be declared by the calling workflow.
+An action cannot grant these permissions to itself; they must be declared by the calling job.
+
 
 Keep `team-freeze-guard` alone in its job. `id-token: write` applies to every step in the job, so unrelated third-party actions should not share the same job.
 
 The organization scope, Octo STS policy name, and Octo STS pool are intentionally controlled by the action rather than exposed as repository inputs.
+
+## Caching team membership
+
+Resolving frozen-team membership costs one GitHub API call per configured frozen team, on every run. The action can skip that work on `pull_request_target` runs by restoring a cached result instead — but `pull_request_target` (like `pull_request`) only ever gets a **read-only** Actions cache token, so it can restore a cache entry but can never create or refresh one. 
+
+On `push`, `schedule`, and `workflow_dispatch` events the action only resolves and caches team membership; it does not evaluate a pull request, since none of these events carry one.
+
+Pick your own `schedule` cadence. `push` on your default branch keeps the cache in step with `frozen-teams` changes; `schedule` is what keeps it in step with GitHub team-membership changes made outside this repository, so choose an interval short enough for your incident process. `workflow_dispatch` lets you force a refresh on demand.
+
+Adding these triggers is optional. Without them, every `pull_request_target` run resolves team membership itself, as before.
+
+The GitHub Actions cache does not let an existing entry be overwritten in place, so a `push`/`schedule`/`workflow_dispatch` run deletes the previous entry for `frozen-teams`'s cache key (via `gh cache delete`) immediately before saving a fresh one — otherwise every warm-up run after the first would be a silent no-op and the cache would never actually reflect a GitHub team-membership change made outside this repository.
+
+This delete-then-save sequence is not safe to run concurrently: without the `concurrency` block shown above, two overlapping warm-up runs (for example, a `schedule` run still resolving membership when a `push` run starts) can finish out of order, and whichever one finishes last wins regardless of which one actually resolved fresher data — a slower run can delete and overwrite a faster run's newer entry with its own older snapshot. The `concurrency` group above queues warm-up runs so they always execute one at a time in start order, without affecting how `pull_request_target` runs for different pull requests are scheduled.
+
+**Enabling this cache makes the frozen teams' membership effectively public.** GitHub Actions cache restore is available to any workflow run in the repository with a cache token, even a read-only one — including a `pull_request` workflow contributed by a fork — and the cache key is derived only from the `frozen-teams` input, which is already public in the checked-in workflow file. Anyone able to open a pull request against the repository can therefore add a step that restores the cache entry and reads every frozen team's full member list. Only add the `push`/`schedule`/`workflow_dispatch` triggers if that exposure is acceptable for your teams; see [`docs/limitations.md`](docs/limitations.md)'s "Cached team membership is effectively public" entry.
 
 ## Enforcing the result with a ruleset
 
@@ -147,7 +179,6 @@ Keep the job name stable. Changing it changes the status-check name and can leav
 | A participant belongs to a frozen team and every configured bypass mechanism is satisfied | Pass |
 | A participant belongs to a frozen team, both `bypass-labels` and `bypass-title-pattern` are configured, and only one of them is satisfied | Fail |
 | The last remaining bypass label is removed while a participant belongs to a frozen team | Re-evaluate and fail |
-| A new commit introduces a frozen participant | Re-evaluate and require the configured bypass mechanisms |
 | The configuration is missing or malformed | Fail |
 | A configured frozen team is unknown or inaccessible | Fail |
 | GitHub or Octo STS cannot be queried reliably (rate limiting, pagination, or unexpected responses) | Fail |
