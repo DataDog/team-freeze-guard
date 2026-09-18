@@ -40,6 +40,12 @@ The consequence: a commit's committer is only checked at the moment it becomes (
 
 This is an accepted scope limitation, not a bypass GitHub itself can close: checking every commit would require paginating the full commit list on every evaluation, which is the API cost this design deliberately avoids.
 
+## Head commit lookup failures skip the committer check instead of failing closed
+
+Every other participant-resolution or team-membership-resolution failure fails the check closed (see `FAIL_CLOSED_MESSAGE`). The one exception is the head commit lookup (`GET /repos/{owner}/{repo}/commits/{sha}`, used to resolve the head commit's committer): it retries up to 3 attempts total, 5 seconds apart, and if all 3 fail, the committer check is silently skipped for that evaluation instead of failing the pull request closed.
+
+This is a deliberate tradeoff, not an oversight: this is a narrowly-scoped, repository- and commit-specific read call, so persistent failure is far more likely to indicate transient GitHub API flakiness than an actual reason to distrust the evaluation, and failing every pull request closed on that flakiness would be more disruptive than the residual risk of occasionally missing a committer check. The pull request author is still always checked. A subsequent event (e.g. a new `synchronize`, or a manually re-run workflow) re-attempts the lookup.
+
 ## Merge queues
 
 The initial design targets ordinary pull request merges. A required check used with GitHub's merge queue must also report correctly for `merge_group` events. Do not enable this check in a merge-queue ruleset until merge-group evaluation has been explicitly implemented and tested.

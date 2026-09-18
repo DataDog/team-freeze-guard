@@ -3,7 +3,7 @@
 // This product includes software developed at Datadog (https://www.datadoghq.com/).
 // Copyright 2026 Datadog, Inc.
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { resolveParticipants } from '../../src/github/participants'
 
 interface CommitFixture {
@@ -91,5 +91,75 @@ describe('resolveParticipants', () => {
     })
 
     expect(getCommitCalls).toEqual([[{ owner: 'org', repo: 'repo', ref: 'deadbeef' }]])
+  })
+
+  it('retries a failed head commit lookup up to twice, waiting 5s between attempts', async () => {
+    vi.useFakeTimers()
+    try {
+      let calls = 0
+      const octokit = {
+        rest: {
+          repos: {
+            getCommit: async () => {
+              calls += 1
+              if (calls < 3) {
+                throw new Error('transient failure')
+              }
+              return { data: commit({ committer: { login: 'bob' } }) }
+            },
+          },
+        },
+      } as unknown as Parameters<typeof resolveParticipants>[0]['octokit']
+
+      const resultPromise = resolveParticipants({
+        octokit,
+        owner: 'org',
+        repo: 'repo',
+        headSha: 'abc123',
+        prAuthorLogin: 'alice',
+      })
+
+      await vi.runAllTimersAsync()
+      const result = await resultPromise
+
+      expect(calls).toBe(3)
+      expect(result.logins.sort()).toEqual(['alice', 'bob'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('silently skips the committer check when all three lookup attempts fail', async () => {
+    vi.useFakeTimers()
+    try {
+      let calls = 0
+      const octokit = {
+        rest: {
+          repos: {
+            getCommit: async () => {
+              calls += 1
+              throw new Error('persistent failure')
+            },
+          },
+        },
+      } as unknown as Parameters<typeof resolveParticipants>[0]['octokit']
+
+      const resultPromise = resolveParticipants({
+        octokit,
+        owner: 'org',
+        repo: 'repo',
+        headSha: 'abc123',
+        prAuthorLogin: 'alice',
+      })
+
+      await vi.runAllTimersAsync()
+      const result = await resultPromise
+
+      expect(calls).toBe(3)
+      expect(result.logins).toEqual(['alice'])
+      expect(result.unmappedIdentities).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

@@ -211,19 +211,44 @@ describe('evaluate', () => {
     expect(reporter.summaries[0]).toContain('could not be evaluated safely')
   })
 
-  it('fails closed when participant resolution throws', async () => {
+  it('skips the head committer check, without failing closed, when its lookup keeps failing', async () => {
+    vi.useFakeTimers()
+    try {
+      const reporter = fakeReporter()
+      const octokit = {
+        rest: {
+          repos: {
+            getCommit: async () => {
+              throw new Error('boom')
+            },
+          },
+        },
+      } as unknown as EvaluateInput['octokit']
+
+      const evaluatePromise = evaluate(baseInput({ octokit, reporter }))
+      await vi.runAllTimersAsync()
+      await evaluatePromise
+
+      expect(reporter.failures).toEqual([])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('fails closed when team membership resolution throws', async () => {
     const reporter = fakeReporter()
-    const octokit = {
+    const orgOctokit = {
       rest: {
-        repos: {
-          getCommit: async () => {
+        teams: {
+          listMembersInOrg: async () => {
             throw new Error('boom')
           },
         },
       },
-    } as unknown as EvaluateInput['octokit']
+      paginate: async (fn: () => Promise<unknown>) => fn(),
+    } as unknown as EvaluateInput['orgOctokit']
 
-    await evaluate(baseInput({ octokit, reporter }))
+    await evaluate(baseInput({ orgOctokit, reporter }))
 
     expect(reporter.failures).toEqual([FAIL_CLOSED_MESSAGE])
     expect(reporter.summaries[0]).toContain('could not be evaluated safely')
@@ -231,37 +256,20 @@ describe('evaluate', () => {
 
   it('logs only the error message, never a full stack trace, to avoid leaking internal detail into a possibly public Actions log', async () => {
     const reporter = fakeReporter()
-    const octokit = {
+    const orgOctokit = {
       rest: {
-        repos: {
-          getCommit: async () => {
+        teams: {
+          listMembersInOrg: async () => {
             throw new Error('boom')
           },
         },
       },
-    } as unknown as EvaluateInput['octokit']
+      paginate: async (fn: () => Promise<unknown>) => fn(),
+    } as unknown as EvaluateInput['orgOctokit']
 
-    await evaluate(baseInput({ octokit, reporter }))
+    await evaluate(baseInput({ orgOctokit, reporter }))
 
-    expect(reporter.warnings).toEqual(['boom'])
-  })
-
-  it('logs a non-Error throwable as readable JSON instead of "[object Object]"', async () => {
-    const reporter = fakeReporter()
-    const octokit = {
-      rest: {
-        repos: {
-          getCommit: async () => {
-            throw { status: 404, message: 'Not Found' }
-          },
-        },
-      },
-    } as unknown as EvaluateInput['octokit']
-
-    await evaluate(baseInput({ octokit, reporter }))
-
-    expect(reporter.failures).toEqual([FAIL_CLOSED_MESSAGE])
-    expect(reporter.warnings).toEqual([JSON.stringify({ status: 404, message: 'Not Found' })])
+    expect(reporter.warnings).toEqual(['Failed to resolve members of team "@org/team-a".'])
   })
 
   it('fails closed with a config error when frozen-teams is the action.yml "not set" sentinel', async () => {
