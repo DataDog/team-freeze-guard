@@ -52,7 +52,7 @@ runs:
 
     # Only push/workflow_dispatch/schedule runs get a writable Actions cache token;
     # pull_request/pull_request_target runs get a read-only one, so a save from those
-    # always fails (see docs/Internals/architecture.md's "No GitHub Actions cache" section).
+    # always fails (see docs/Internals/architecture.md's "Team-membership caching" section).
     # A restore is safe and useful on every event, including pull_request_target: it lets
     # such a run reuse membership data warmed by a push/schedule/workflow_dispatch run,
     # skipping both the OIDC exchange and the team-membership API calls below on a hit.
