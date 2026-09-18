@@ -45,6 +45,27 @@ on:
       - unlabeled
       - ready_for_review
       - edited
+    # These events warm the team-membership cache instead of evaluating a pull
+    # request; see "## Caching team membership" below.
+  push:
+    branches:
+      - main  # default branch
+    paths:
+      - .github/workflows/team-freeze-guard.yml
+  schedule:
+    - cron: '*/30 * * * *'  # if team composition changes
+  workflow_dispatch:  # force cache update
+
+concurrency:
+  # Serializes push/schedule/workflow_dispatch warm-up runs against each other so a
+  # slower run can never finish after a faster one and overwrite its fresher cache
+  # entry with a stale one. Each pull_request_target run gets its own group by PR
+  # number so PR evaluations are never queued behind cache warm-ups or each other.
+  group: >-
+    ${{ contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event_name)
+        && 'team-freeze-guard-cache-warmup'
+        || format('team-freeze-guard-pr-{0}', github.event.pull_request.number) }}
+  cancel-in-progress: false
 
 jobs:
   team-freeze-guard:
@@ -52,6 +73,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
+      actions: write  # for team membership cache
 
     steps:
       - uses: DataDog/team-freeze-guard@<full-commit-sha>
@@ -103,6 +125,7 @@ An empty `frozen-teams` values means that no check is performed (no code freeze)
 | Permission | Reason |
 | --- | --- |
 | `id-token: write` | Allows `dd-octo-sts-action` to exchange the workflow's OIDC identity for a short-lived GitHub App token. |
+| `actions: write` | Allows saving the resolved team-membership cache entry for `push`, `schedule`, and `workflow_dispatch` events. |
 
 An action cannot grant these permissions to itself; they must be declared by the calling job.
 
@@ -110,6 +133,22 @@ An action cannot grant these permissions to itself; they must be declared by the
 Keep `team-freeze-guard` alone in its job. `id-token: write` applies to every step in the job, so unrelated third-party actions should not share the same job.
 
 The organization scope, Octo STS policy name, and Octo STS pool are intentionally controlled by the action rather than exposed as repository inputs.
+
+## Caching team membership
+
+Resolving frozen-team membership costs one GitHub API call per configured frozen team, on every run. The action can skip that work on `pull_request_target` runs by restoring a cached result instead — but `pull_request_target` (like `pull_request`) only ever gets a **read-only** Actions cache token, so it can restore a cache entry but can never create or refresh one. 
+
+On `push`, `schedule`, and `workflow_dispatch` events the action only resolves and caches team membership; it does not evaluate a pull request, since none of these events carry one.
+
+Pick your own `schedule` cadence. `push` on your default branch keeps the cache in step with `frozen-teams` changes; `schedule` is what keeps it in step with GitHub team-membership changes made outside this repository, so choose an interval short enough for your incident process. `workflow_dispatch` lets you force a refresh on demand.
+
+Adding these triggers is optional. Without them, every `pull_request_target` run resolves team membership itself, as before.
+
+The GitHub Actions cache does not let an existing entry be overwritten in place, so a `push`/`schedule`/`workflow_dispatch` run deletes the previous entry for `frozen-teams`'s cache key (via `gh cache delete`) immediately before saving a fresh one — otherwise every warm-up run after the first would be a silent no-op and the cache would never actually reflect a GitHub team-membership change made outside this repository.
+
+This delete-then-save sequence is not safe to run concurrently: without the `concurrency` block shown above, two overlapping warm-up runs (for example, a `schedule` run still resolving membership when a `push` run starts) can finish out of order, and whichever one finishes last wins regardless of which one actually resolved fresher data — a slower run can delete and overwrite a faster run's newer entry with its own older snapshot. The `concurrency` group above queues warm-up runs so they always execute one at a time in start order, without affecting how `pull_request_target` runs for different pull requests are scheduled.
+
+**Enabling this cache makes the frozen teams' membership effectively public.** GitHub Actions cache restore is available to any workflow run in the repository with a cache token, even a read-only one — including a `pull_request` workflow contributed by a fork — and the cache key is derived only from the `frozen-teams` input, which is already public in the checked-in workflow file. Anyone able to open a pull request against the repository can therefore add a step that restores the cache entry and reads every frozen team's full member list. Only add the `push`/`schedule`/`workflow_dispatch` triggers if that exposure is acceptable for your teams; see [`docs/limitations.md`](docs/limitations.md)'s "Cached team membership is effectively public" entry.
 
 ## Enforcing the result with a ruleset
 

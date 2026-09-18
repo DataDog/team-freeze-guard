@@ -25,6 +25,12 @@ Participant identity resolution considers only `pull_request.user.login` — the
 
 The consequence: a frozen-team engineer can ask a teammate to open the pull request and commit on their behalf, or to add commits of their own to someone else's pull request, without appearing as the author, and the check cannot detect this. This is treated as an accepted gap, not a technical bypass to close: circumventing a freeze by asking a colleague to front a change on your behalf is a process/HR issue, not something this check is expected to prevent.
 
+## Cached team membership is effectively public
+
+The optional team-membership cache (see the README's "Caching team membership" section) stores every frozen team's full member list in a plain GitHub Actions cache entry. Actions cache **restore** is available to any workflow run in the repository with a valid cache token, even a read-only one — including a `pull_request`-triggered workflow contributed by a fork. The cache key is derived only from the `frozen-teams` input, which is public in the checked-in workflow file, so there is no secrecy in the key itself.
+
+The practical consequence: once a repository adds the `push`/`schedule`/`workflow_dispatch` triggers that warm this cache, anyone able to open a pull request against the repository can add a workflow step that restores the cache entry and reads the full membership of every frozen team. This is an accepted tradeoff of enabling the cache, not a bug to fix — do not enable the cache for a repository whose frozen-team membership must not be exposed this way.
+
 ## Merge queues
 
 The initial design targets ordinary pull request merges. A required check used with GitHub's merge queue must also report correctly for `merge_group` events. Do not enable this check in a merge-queue ruleset until merge-group evaluation has been explicitly implemented and tested.

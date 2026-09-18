@@ -4,6 +4,8 @@
 
 For each configured frozen team, the separate "Resolve frozen team membership" action step (`dist/resolve-team-membership/index.js`) lists active team members using the organization-scoped Octo STS token and writes the result to a JSON file. The evaluator (`dist/index.js`) reads that file rather than calling the Teams API itself, and treats the file's keys as the authoritative frozen-teams list — it no longer parses the raw `frozen-teams` input. It intersects team membership with the pull request participant set.
 
+`action.yml` can skip resolving membership itself by restoring that same JSON file from the GitHub Actions cache instead (see `docs/Internals/architecture.md`'s "Team-membership caching" section). This is opportunistic, not required: a cache miss falls back to resolving membership exactly as described above, so the rest of this section's behavior holds either way.
+
 Listing each team's members is preferred over querying every participant against every team:
 
 - The number of frozen teams is expected to be small.
@@ -22,9 +24,16 @@ The action, across `action.yml` and the two Node programs it invokes — `dist/r
 if frozen-teams is empty:
     pass                                    # action.yml, before either Node program ever runs
 
+if a cached membership file matches this frozen-teams value:   # action.yml, restore step
+    skip straight to "load and validate trusted repository configuration" below,
+    unless this run is push/workflow_dispatch/schedule (those always resolve fresh)
+
 resolve the active members of every frozen team            # dist/resolve-team-membership/index.js,
-                                                             # unconditional whenever this step runs
+                                                             # skipped on a cache hit, except as above
 write the resolved membership to a JSON file
+
+if this run is push/workflow_dispatch/schedule:             # action.yml, save step
+    save the JSON file to the Actions cache, then stop — there is no pull request to evaluate
 
 load and validate trusted repository configuration          # dist/index.js, from here on
 
@@ -66,6 +75,8 @@ On a policy denial, the job summary includes:
 
 The action should avoid exposing unnecessary organization membership information. Reporting matching teams is sufficient; listing every matching user is useful for debug logs but should not be included in the default user-facing summary.
 
+The optional team-membership cache (see `docs/Internals/architecture.md`'s "Team-membership caching" section) is a deliberate exception to this: the cached file contains every frozen team's full member list, and any workflow able to restore a GitHub Actions cache entry for the repository — including a `pull_request`-triggered workflow added by a fork, which only needs a read-only cache token — can read it, using a cache key that's derivable from the public `frozen-teams` workflow input. See `docs/limitations.md`'s "Cached team membership is effectively public" entry before enabling the cache.
+
 ## Failure policy
 
 The action fails closed for:
@@ -96,6 +107,8 @@ The workflow reacts to:
 Pull request description, assignee, and review changes do not affect the policy and do not require evaluation.
 
 Repository configuration and GitHub team membership changes do not generate these events. They require the explicit reconciliation process described in the user guide.
+
+The optional cache warm-up workflow (see the README's "Caching team membership" section) is triggered separately, by `push`, `schedule`, and `workflow_dispatch` — none of which carry a pull request, so `action.yml` skips policy evaluation for them and only resolves and caches team membership (see the Decision algorithm above).
 
 ## Configuration and workflow ownership
 
