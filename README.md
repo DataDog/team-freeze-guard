@@ -135,6 +135,8 @@ Adding these triggers is optional. Without them, every `pull_request_target` run
 
 The GitHub Actions cache does not let an existing entry be overwritten in place, so a `push`/`schedule`/`workflow_dispatch` run deletes the previous entry for `frozen-teams`'s cache key (via `gh cache delete`) immediately before saving a fresh one — otherwise every warm-up run after the first would be a silent no-op and the cache would never actually reflect a GitHub team-membership change made outside this repository.
 
+**Enabling this cache makes the frozen teams' membership effectively public.** GitHub Actions cache restore is available to any workflow run in the repository with a cache token, even a read-only one — including a `pull_request` workflow contributed by a fork — and the cache key is derived only from the `frozen-teams` input, which is already public in the checked-in workflow file. Anyone able to open a pull request against the repository can therefore add a step that restores the cache entry and reads every frozen team's full member list. Only add the `push`/`schedule`/`workflow_dispatch` triggers if that exposure is acceptable for your teams; see [`docs/limitations.md`](docs/limitations.md)'s "Cached team membership is effectively public" entry.
+
 ## Enforcing the result with a ruleset
 
 Running the action is not sufficient by itself. Configure a GitHub repository or organization ruleset that requires the following status check on the target branch:

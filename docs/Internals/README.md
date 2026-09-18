@@ -75,6 +75,8 @@ On a policy denial, the job summary includes:
 
 The action should avoid exposing unnecessary organization membership information. Reporting matching teams is sufficient; listing every matching user is useful for debug logs but should not be included in the default user-facing summary.
 
+The optional team-membership cache (see `docs/Internals/architecture.md`'s "Team-membership caching" section) is a deliberate exception to this: the cached file contains every frozen team's full member list, and any workflow able to restore a GitHub Actions cache entry for the repository — including a `pull_request`-triggered workflow added by a fork, which only needs a read-only cache token — can read it, using a cache key that's derivable from the public `frozen-teams` workflow input. See `docs/limitations.md`'s "Cached team membership is effectively public" entry before enabling the cache.
+
 ## Failure policy
 
 The action fails closed for:
