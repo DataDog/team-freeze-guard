@@ -19,32 +19,11 @@ The action verifies that at least one of the configured `bypass-labels` is prese
 
 If a bypass mechanism represents an approval rather than a self-declared classification, use an additional mechanism to ensure it was applied or approved by an Incident Commander or CI owner. Possible mechanisms include a bot-owned command, an authorized review, or validation of the label or edit event actor.
 
-## `Co-authored-by` trailers are not evaluated
+## Only the pull request author is checked
 
-Participant identity resolution uses the GitHub-linked commit committer only (see below). A frozen engineer's contribution recorded solely as a `Co-authored-by:` trailer in a commit message is not detected, since GitHub does not surface trailer identities as a distinct author or committer on the commit. This is an accepted scope limitation, not a bypass GitHub itself can close: closing it would require parsing commit message trailers and mapping free-text identities to GitHub accounts, which is unreliable.
+Participant identity resolution considers only `pull_request.user.login` — the pull request author. It does not look at commit committers, commit authors, or `Co-authored-by:` trailers.
 
-## Commit authorship is not checked
-
-Participant identity resolution only considers the pull request author and the GitHub-linked *committer* of the current head commit — not the commit *author*. This is a deliberate simplicity tradeoff: checking committer alone is simpler to implement and reason about than also resolving and deduplicating commit authors.
-
-The consequence: a frozen-team engineer can ask a teammate to open the pull request and commit on their behalf (e.g. via `git commit --author`), which the check cannot detect — the frozen engineer never appears as the PR author or as a committer. This is treated as an accepted gap, not a technical bypass to close: circumventing a freeze by asking a colleague to front a change on your behalf is a process/HR issue, not something this check is expected to prevent.
-
-## Only the head commit is checked
-
-Participant identity resolution fetches only the pull request's current head commit (`pull_request.head.sha`), not every commit in the pull request's history. This is a deliberate cost/simplicity tradeoff: one API call per evaluation instead of a paginated list of every commit.
-
-The consequence: a commit's committer is only checked at the moment it becomes (or is part of establishing) the head commit under evaluation. In practice this means:
-
-- A `synchronize` event re-evaluates the new head commit each time commits are pushed, so an individual push is checked as it happens.
-- However, if a pull request is opened from a branch that already contained multiple commits (or a force-push replaces several commits at once), only the resulting head commit's committer is checked — the committers of the other, non-head commits bundled into that same event are not.
-
-This is an accepted scope limitation, not a bypass GitHub itself can close: checking every commit would require paginating the full commit list on every evaluation, which is the API cost this design deliberately avoids.
-
-## Head commit lookup failures skip the committer check instead of failing closed
-
-Every other participant-resolution or team-membership-resolution failure fails the check closed (see `FAIL_CLOSED_MESSAGE`). The one exception is the head commit lookup (`GET /repos/{owner}/{repo}/commits/{sha}`, used to resolve the head commit's committer): it retries up to 3 attempts total, 5 seconds apart, and if all 3 fail, the committer check is silently skipped for that evaluation instead of failing the pull request closed.
-
-This is a deliberate tradeoff, not an oversight: this is a narrowly-scoped, repository- and commit-specific read call, so persistent failure is far more likely to indicate transient GitHub API flakiness than an actual reason to distrust the evaluation, and failing every pull request closed on that flakiness would be more disruptive than the residual risk of occasionally missing a committer check. The pull request author is still always checked. A subsequent event (e.g. a new `synchronize`, or a manually re-run workflow) re-attempts the lookup.
+The consequence: a frozen-team engineer can ask a teammate to open the pull request and commit on their behalf, or to add commits of their own to someone else's pull request, without appearing as the author, and the check cannot detect this. This is treated as an accepted gap, not a technical bypass to close: circumventing a freeze by asking a colleague to front a change on your behalf is a process/HR issue, not something this check is expected to prevent.
 
 ## Merge queues
 
