@@ -73,7 +73,6 @@ runs:
       shell: bash
       run: node "${{ github.action_path }}/dist/index.js"
       env:
-        GITHUB_TOKEN: ${{ github.token }}
         TEAM_MEMBERSHIP_FILE: ${{ runner.temp }}/team-freeze-guard-team-membership.json
         # @actions/core's getInput() only replaces spaces (not dashes) before
         # uppercasing an input name to its INPUT_ env var, so this must keep

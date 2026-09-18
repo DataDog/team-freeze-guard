@@ -22,7 +22,7 @@ Before this plan, the repo contained only design docs — no code. The docs are 
 - `README.md` — public contract: config fields (`bypass-labels`, `frozen-teams`), workflow example, permissions, expected-behavior matrix, ruleset rollout.
 - `docs/Internals/README.md` — team-membership resolution strategy, the canonical decision algorithm, check reporting rules, fail-closed error list, event coverage table.
 - `docs/Internals/architecture.md` — composite-action structure, trusted-execution rules for `pull_request_target`, why config comes from workflow `with:` inputs (not a checked-out file).
-- `docs/Internals/participant-identity-resolution.md` — exact rule for building the participant set (PR author + GitHub-linked commit committer logins only, unmapped identities are warnings not participants).
+- `docs/Internals/participant-identity-resolution.md` — exact rule for building the participant set (PR author + GitHub-linked commit committer logins only, unmapped identities are warnings not participants). Deleted once PR 4 was reverted; see that section.
 - `docs/Internals/octo-sts.md` — Octo STS trust policy shape (org-scoped `Members: read` token).
 - `docs/Internals/testing.md` — required unit vs. integration test coverage.
 - `docs/limitations.md` — known gaps to *not* try to silently solve mid-implementation (reconciliation on config/membership change, label authorization, `Co-authored-by` trailers, merge queues — all out of scope for this plan).
@@ -70,7 +70,7 @@ Source: `docs/Internals/README.md` "Decision algorithm" section (canonical order
 
 ## PR 4 — Participant identity resolution (GitHub API adapter)
 
-Source: `docs/Internals/participant-identity-resolution.md`.
+Source: `docs/Internals/participant-identity-resolution.md` (deleted once this PR was reverted — see the status note below).
 
 - `src/github/participants.ts`: given an Octokit client + the pull request's head SHA, return the deduplicated set of GitHub logins:
   - `pull_request.user.login`.
@@ -79,10 +79,11 @@ Source: `docs/Internals/participant-identity-resolution.md`.
   - Let unexpected/rate-limited responses throw — PR 6 catches and fails closed.
 - `test/github/participants.test.ts` (mocked Octokit transport or `nock`): PR author alone, author + mapped head committer, deduplication when they're the same login, unmapped head committer identity, asserting only the head commit is fetched (not a commit list).
 
-**Status: implemented, not yet reviewed.** Deviations from the plan:
+**Status: reverted.** Deviations from the plan:
 - The plan originally called for paginating every commit on the pull request and collecting both author and committer logins across all of them. This was narrowed twice during review: first to committer-only (dropping commit-author resolution), then to the head commit only (dropping full commit-history pagination) — a single `GET .../commits/{sha}` call replaces `octokit.paginate(...pulls.listCommits...)` entirely. Both tradeoffs are documented in `docs/limitations.md`.
 - Uses a hand-written fake Octokit object (matching the shape `{ rest: { repos: { getCommit } } }`) rather than `nock`, since no HTTP transport needs mocking — `getCommit` is the only surface `resolveParticipants` touches.
 - Verified locally: `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` all pass.
+- Later reverted entirely: `src/github/participants.ts` and its test were deleted, and `src/main.ts` now checks only `pull_request.user.login` as the sole participant. The `GITHUB_TOKEN`/`contents: read` permission this feature needed is no longer passed to or required by the action. Reason: committer resolution added complexity (a retry loop, an unmapped-identity warning path, an extra `GITHUB_TOKEN` permission) for a gap — someone else committing on a frozen-team member's behalf — that is treated as an accepted process/HR gap rather than one this check should try to close; see `docs/limitations.md`'s "Only the pull request author is checked" section.
 
 ## PR 5 — Team membership resolution (GitHub API adapter)
 

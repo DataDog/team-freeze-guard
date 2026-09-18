@@ -31994,71 +31994,6 @@ function decide(input) {
 
 /***/ }),
 
-/***/ 8317:
-/***/ ((__unused_webpack_module, exports) => {
-
-"use strict";
-
-// Unless explicitly stated otherwise all files in this repository are licensed
-// under the Apache License Version 2.0.
-// This product includes software developed at Datadog (https://www.datadoghq.com/).
-// Copyright 2026 Datadog, Inc.
-Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.resolveParticipants = resolveParticipants;
-const GET_COMMIT_RETRY_ATTEMPTS = 3;
-const GET_COMMIT_RETRY_DELAY_MS = 5000;
-async function resolveParticipants(input) {
-    const logins = new Set([input.prAuthorLogin]);
-    const unmappedIdentities = new Set();
-    const commit = await getHeadCommitWithRetry(input);
-    if (commit) {
-        recordIdentity(commit.committer?.login ?? null, formatUnmappedIdentity(commit.commit.committer?.name, commit.commit.committer?.email), logins, unmappedIdentities);
-    }
-    return { logins: [...logins], unmappedIdentities: [...unmappedIdentities] };
-}
-// The head commit lookup is best-effort: if it keeps failing (e.g. transient GitHub API
-// flakiness) we skip checking the last committer rather than fail the whole PR closed.
-async function getHeadCommitWithRetry(input) {
-    for (let attempt = 1; attempt <= GET_COMMIT_RETRY_ATTEMPTS; attempt++) {
-        try {
-            const { data: commit } = await input.octokit.rest.repos.getCommit({
-                owner: input.owner,
-                repo: input.repo,
-                ref: input.headSha,
-            });
-            return commit;
-        }
-        catch {
-            if (attempt === GET_COMMIT_RETRY_ATTEMPTS) {
-                return null;
-            }
-            await sleep(GET_COMMIT_RETRY_DELAY_MS);
-        }
-    }
-    return null;
-}
-function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-function formatUnmappedIdentity(name, email) {
-    if (!name) {
-        return null;
-    }
-    return email ? `${name} <${email}>` : name;
-}
-function recordIdentity(login, unmappedIdentity, logins, unmappedIdentities) {
-    if (login) {
-        logins.add(login);
-        return;
-    }
-    if (unmappedIdentity) {
-        unmappedIdentities.add(unmappedIdentity);
-    }
-}
-
-
-/***/ }),
-
 /***/ 1730:
 /***/ (function(__unused_webpack_module, exports, __nccwpck_require__) {
 
@@ -32108,7 +32043,6 @@ const core = __importStar(__nccwpck_require__(7484));
 const github_1 = __nccwpck_require__(3228);
 const config_1 = __nccwpck_require__(2973);
 const decision_1 = __nccwpck_require__(7033);
-const participants_1 = __nccwpck_require__(8317);
 const reporting_1 = __nccwpck_require__(9953);
 const team_membership_file_1 = __nccwpck_require__(4601);
 async function evaluate(input) {
@@ -32141,23 +32075,13 @@ async function evaluateOrThrow(input) {
         input.reporter.info('The configured bypass conditions are satisfied; passing without evaluating participants.');
         return;
     }
-    const participants = await (0, participants_1.resolveParticipants)({
-        octokit: input.octokit,
-        owner: input.repoOwner,
-        repo: input.repoName,
-        headSha: input.pullRequest.headSha,
-        prAuthorLogin: input.pullRequest.authorLogin,
-    });
-    for (const identity of participants.unmappedIdentities) {
-        input.reporter.warning(`Could not map commit identity "${identity}" to a GitHub account; it was not checked against frozen teams.`);
-    }
     const decision = (0, decision_1.decide)({
         frozenTeams: [...input.teamMembership.keys()],
         bypassLabels: config.bypassLabels,
         bypassTitlePattern: config.bypassTitlePattern,
         prLabels: input.pullRequest.labels,
         prTitle: input.pullRequest.title,
-        participants: participants.logins,
+        participants: [input.pullRequest.authorLogin],
         teamMembership: input.teamMembership,
     });
     if (decision.outcome === 'pass') {
@@ -32237,22 +32161,18 @@ async function buildEvaluateInput(reporter) {
         bypassLabelsInput: core.getInput('bypass-labels'),
         bypassTitlePatternInput: core.getInput('bypass-title-pattern'),
         frozenMessageInput: core.getInput('frozen-message'),
-        repoOwner: github_1.context.repo.owner,
-        repoName: github_1.context.repo.repo,
         pullRequest: extractPullRequestContext(),
-        octokit: (0, github_1.getOctokit)((0, reporting_1.getRequiredEnv)('GITHUB_TOKEN')),
         teamMembership: await (0, team_membership_file_1.readTeamMembershipFile)((0, reporting_1.getRequiredEnv)('TEAM_MEMBERSHIP_FILE')),
         reporter,
     };
 }
 function extractPullRequestContext() {
     const pullRequest = github_1.context.payload.pull_request;
-    if (!pullRequest?.user?.login || !pullRequest.head?.sha) {
+    if (!pullRequest?.user?.login) {
         return undefined;
     }
     return {
         authorLogin: pullRequest.user.login,
-        headSha: pullRequest.head.sha,
         labels: (pullRequest.labels ?? [])
             .map((label) => label.name)
             .filter((name) => typeof name === 'string'),
