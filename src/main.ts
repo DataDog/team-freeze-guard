@@ -10,8 +10,8 @@ import { decide, evaluateBypassConditions, shouldBypass } from './decision'
 import type { Config } from './config'
 import type { BypassCondition, Decision } from './decision'
 import { resolveParticipants } from './github/participants'
-import { resolveTeamMembership } from './github/teams'
 import { FAIL_CLOSED_MESSAGE, buildReporter, getRequiredEnv, reportFailClosed, safeWriteSummary, type Reporter } from './reporting'
+import { readTeamMembershipFile, type TeamMembership } from './team-membership-file'
 
 type Octokit = ReturnType<typeof getOctokit>
 
@@ -25,14 +25,14 @@ export interface PullRequestContext {
 export interface EvaluateInput {
   bypassLabelsInput: string | undefined
   bypassTitlePatternInput: string | undefined
-  frozenTeamsInput: string | undefined
   frozenMessageInput: string | undefined
   repoOwner: string
   repoName: string
   pullRequest: PullRequestContext | undefined
   octokit: Octokit
-  // Octo-STS-issued, org-scoped client used only to resolve frozen-team membership.
-  orgOctokit: Octokit
+  // Resolved by the separate "Resolve frozen team membership" action step, and
+  // read from disk rather than fetched here; see buildEvaluateInput.
+  teamMembership: TeamMembership
   reporter: Reporter
 }
 
@@ -48,9 +48,7 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
   const config = parseConfig({
     bypassLabels: input.bypassLabelsInput,
     bypassTitlePattern: input.bypassTitlePatternInput,
-    frozenTeams: input.frozenTeamsInput,
     frozenMessage: input.frozenMessageInput,
-    repoOwner: input.repoOwner,
   })
 
   if (config instanceof ConfigError) {
@@ -74,12 +72,6 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
     return
   }
 
-  const teamMembership = await resolveTeamMembership({
-    octokit: input.orgOctokit,
-    org: input.repoOwner,
-    teamHandles: config.frozenTeams,
-  })
-
   const participants = await resolveParticipants({
     octokit: input.octokit,
     owner: input.repoOwner,
@@ -95,13 +87,13 @@ async function evaluateOrThrow(input: EvaluateInput): Promise<void> {
   }
 
   const decision = decide({
-    frozenTeams: config.frozenTeams,
+    frozenTeams: [...input.teamMembership.keys()],
     bypassLabels: config.bypassLabels,
     bypassTitlePattern: config.bypassTitlePattern,
     prLabels: input.pullRequest.labels,
     prTitle: input.pullRequest.title,
     participants: participants.logins,
-    teamMembership,
+    teamMembership: input.teamMembership,
   })
 
   if (decision.outcome === 'pass') {
@@ -191,23 +183,22 @@ export function run(): void {
 
 async function runWithReporter(reporter: Reporter): Promise<void> {
   try {
-    await evaluate(buildEvaluateInput(reporter))
+    await evaluate(await buildEvaluateInput(reporter))
   } catch (error) {
     await reportFailClosed(reporter, error)
   }
 }
 
-function buildEvaluateInput(reporter: Reporter): EvaluateInput {
+async function buildEvaluateInput(reporter: Reporter): Promise<EvaluateInput> {
   return {
     bypassLabelsInput: core.getInput('bypass-labels'),
     bypassTitlePatternInput: core.getInput('bypass-title-pattern'),
-    frozenTeamsInput: core.getInput('frozen-teams'),
     frozenMessageInput: core.getInput('frozen-message'),
     repoOwner: context.repo.owner,
     repoName: context.repo.repo,
     pullRequest: extractPullRequestContext(),
     octokit: getOctokit(getRequiredEnv('GITHUB_TOKEN')),
-    orgOctokit: getOctokit(getRequiredEnv('ORG_TOKEN')),
+    teamMembership: await readTeamMembershipFile(getRequiredEnv('TEAM_MEMBERSHIP_FILE')),
     reporter,
   }
 }
