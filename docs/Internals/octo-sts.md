@@ -17,7 +17,7 @@ issuer: https://token.actions.githubusercontent.com
 subject_pattern: repo:DataDog/(dd-trace-js:ref:refs/heads/master|system-tests:ref:refs/heads/main|team-freeze-guard:ref:refs/heads/main)
 
 claim_pattern:
-  event_name: pull_request_target
+  event_name: pull_request_target|push|schedule|workflow_dispatch
   ref: refs/heads/(main|master)
   repository: DataDog/(dd-trace-js|system-tests|team-freeze-guard)
 
@@ -26,5 +26,9 @@ permissions:
 ```
 
 `team-freeze-guard` is a reusable composite action meant to be adopted by many repos, but this policy only authorizes the specific repos it lists, added as they onboard — the OIDC identity for a caller invoking this action reflects the *caller's* repo, not `team-freeze-guard`'s, so broadening this to match any DataDog repo is a deliberate decision to avoid (requiring explicit confirmation per the dd-octo-sts guide's guardrails on broad patterns), not something to guess at preemptively. `subject_pattern` pairs each onboarded repo with its own default branch explicitly (`main` vs. `master`) rather than a flat cross product of repos and branches, which would otherwise also wrongly accept, e.g., `system-tests` on `master`. Add further repos (and their branch) to `subject_pattern` and `claim_pattern.repository` as they onboard.
+
+`claim_pattern.event_name` accepts `push`, `schedule`, and `workflow_dispatch` in addition to `pull_request_target`, so that the team-membership cache warm-up runs described in the README's "Caching team membership" section (and `action.yml`'s "Exchange OIDC identity for an org-scoped GitHub token" step) can obtain a token too. This does not broaden which repos or branches are trusted — `subject_pattern` and `claim_pattern.ref`/`repository` still restrict the token to each onboarded repo's own default branch — it only adds the additional trigger events those same trusted workflows use to keep the cache warm.
+
+This file documents the policy; it is not the policy itself. The change above must also be made to `.github/chainguard/team-freeze-guard.read-org-members.sts.yaml` in `DataDog/.github` via its own reviewed pull request (following the precedent of [DataDog/.github#457](https://github.com/DataDog/.github/pull/457)) before any repo's `push`/`schedule`/`workflow_dispatch` warm-up run can successfully exchange its OIDC identity — until that lands, those runs will keep failing the Octo STS exchange with an event-claim mismatch.
 
 The underlying Octo STS GitHub App installation must itself have `Members: read`; a trust policy cannot grant permissions that the App does not possess.
