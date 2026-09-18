@@ -54,13 +54,27 @@ runs:
         scope: DataDog
         policy: team-freeze-guard.read-org-members
 
+    # Resolves frozen-team membership into a JSON file, separately from policy evaluation,
+    # so a future change can cache this step's result across runs.
+    - name: Resolve frozen team membership
+      if: steps.early-checks.outputs.skip != 'true'
+      shell: bash
+      run: node "${{ github.action_path }}/dist/resolve-team-membership/index.js"
+      env:
+        ORG_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        TEAM_MEMBERSHIP_FILE: ${{ runner.temp }}/team-freeze-guard-team-membership.json
+        # @actions/core's getInput() only replaces spaces (not dashes) before
+        # uppercasing an input name to its INPUT_ env var, so this must keep
+        # the dash rather than using an underscore.
+        INPUT_FROZEN-TEAMS: ${{ inputs.frozen-teams }}
+
     - name: Evaluate team freeze policy
       if: steps.early-checks.outputs.skip != 'true'
       shell: bash
       run: node "${{ github.action_path }}/dist/index.js"
       env:
         GITHUB_TOKEN: ${{ github.token }}
-        ORG_TOKEN: ${{ steps.octo-sts.outputs.token }}
+        TEAM_MEMBERSHIP_FILE: ${{ runner.temp }}/team-freeze-guard-team-membership.json
         # @actions/core's getInput() only replaces spaces (not dashes) before
         # uppercasing an input name to its INPUT_ env var, so this must keep
         # the dash rather than using an underscore.
