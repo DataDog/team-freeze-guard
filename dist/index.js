@@ -32012,16 +32012,40 @@ function decide(input) {
 // Copyright 2026 Datadog, Inc.
 Object.defineProperty(exports, "__esModule", ({ value: true }));
 exports.resolveParticipants = resolveParticipants;
+const GET_COMMIT_RETRY_ATTEMPTS = 3;
+const GET_COMMIT_RETRY_DELAY_MS = 5000;
 async function resolveParticipants(input) {
     const logins = new Set([input.prAuthorLogin]);
     const unmappedIdentities = new Set();
-    const { data: commit } = await input.octokit.rest.repos.getCommit({
-        owner: input.owner,
-        repo: input.repo,
-        ref: input.headSha,
-    });
-    recordIdentity(commit.committer?.login ?? null, formatUnmappedIdentity(commit.commit.committer?.name, commit.commit.committer?.email), logins, unmappedIdentities);
+    const commit = await getHeadCommitWithRetry(input);
+    if (commit) {
+        recordIdentity(commit.committer?.login ?? null, formatUnmappedIdentity(commit.commit.committer?.name, commit.commit.committer?.email), logins, unmappedIdentities);
+    }
     return { logins: [...logins], unmappedIdentities: [...unmappedIdentities] };
+}
+// The head commit lookup is best-effort: if it keeps failing (e.g. transient GitHub API
+// flakiness) we skip checking the last committer rather than fail the whole PR closed.
+async function getHeadCommitWithRetry(input) {
+    for (let attempt = 1; attempt <= GET_COMMIT_RETRY_ATTEMPTS; attempt++) {
+        try {
+            const { data: commit } = await input.octokit.rest.repos.getCommit({
+                owner: input.owner,
+                repo: input.repo,
+                ref: input.headSha,
+            });
+            return commit;
+        }
+        catch {
+            if (attempt === GET_COMMIT_RETRY_ATTEMPTS) {
+                return null;
+            }
+            await sleep(GET_COMMIT_RETRY_DELAY_MS);
+        }
+    }
+    return null;
+}
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
 }
 function formatUnmappedIdentity(name, email) {
     if (!name) {
