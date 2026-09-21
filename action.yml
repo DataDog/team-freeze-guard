@@ -25,20 +25,37 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    # frozen-teams is empty-like makes the outcome a foregone pass without needing any external call
+    # frozen-teams is empty-like, or this is a warm-up run that can't produce a usable
+    # cache entry, makes the outcome a foregone pass without needing any external call
     - name: Early checks (skip when the freeze is disabled)
       id: early-checks
       shell: python
       env:
         FROZEN_TEAMS: ${{ inputs.frozen-teams }}
+        EVENT_NAME: ${{ github.event_name }}
+        WORKFLOW_REF: ${{ github.ref }}
       run: |
         import hashlib
         import os
 
         frozen_teams_empty = not any(line.strip() for line in os.environ["FROZEN_TEAMS"].splitlines())
 
+        # A push/workflow_dispatch/schedule run exists only to warm the cache (see the
+        # save step below); a pull_request_target run's ref is always the base branch,
+        # so only a cache saved from that same default branch is ever restorable by one
+        # (see docs/Internals/architecture.md's "Team-membership caching" section).
+        # A warm-up run on any other branch/ref would spend an Octo STS exchange and
+        # team-membership API calls on an entry nothing can ever read, so skip entirely.
+        is_warmup_event = os.environ["EVENT_NAME"] in ("push", "workflow_dispatch", "schedule")
+        is_default_branch = os.environ["WORKFLOW_REF"] in ("refs/heads/main", "refs/heads/master")
+        useless_warmup = is_warmup_event and not is_default_branch
+
+        skip = frozen_teams_empty or useless_warmup
+
         if frozen_teams_empty:
             print("No frozen teams configured; passing without evaluating participants.")
+        elif useless_warmup:
+            print(f"{os.environ['EVENT_NAME']} run on {os.environ['WORKFLOW_REF']}, not the default branch; skipping cache warm-up.")
 
         # Changes immediately on a frozen-teams config change; how often the cached
         # membership itself refreshes is up to the calling repository's push/schedule/
@@ -47,7 +64,7 @@ runs:
         cache_key = f"team-freeze-guard-membership-{frozen_teams_hash}"
 
         with open(os.environ["GITHUB_OUTPUT"], "a") as f:
-            f.write(f"skip={'true' if frozen_teams_empty else 'false'}\n")
+            f.write(f"skip={'true' if skip else 'false'}\n")
             f.write(f"cache-key={cache_key}\n")
 
     # Only push/workflow_dispatch/schedule runs get a writable Actions cache token;

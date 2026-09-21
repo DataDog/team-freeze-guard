@@ -24,6 +24,10 @@ The action, across `action.yml` and the two Node programs it invokes — `dist/r
 if frozen-teams is empty:
     pass                                    # action.yml, before either Node program ever runs
 
+if this run is push/workflow_dispatch/schedule on a non-default-branch ref:
+    pass                                    # action.yml, before either Node program ever runs
+                                             # (a cache saved here could never be restored anyway)
+
 if a cached membership file matches this frozen-teams value:   # action.yml, restore step
     skip straight to "load and validate trusted repository configuration" below,
     unless this run is push/workflow_dispatch/schedule (those always resolve fresh)
@@ -51,7 +55,7 @@ fail with "Your team is frozen"
 
 Team-membership resolution now runs in its own step, unconditionally, before the evaluator even starts — see `docs/Internals/architecture.md`'s Architecture section. This means the bypass check (`shouldBypass` in `src/decision.ts`) can no longer save the team-membership API calls the way it once could when both lived in the same process: those calls always happen when `frozen-teams` is non-empty, bypass or not.
 
-The `frozen-teams`-empty short circuit is stricter than "skip participant resolution": it must skip **every** external call, including the Octo STS token exchange and the team-membership API calls, not just the evaluator's own calls. `action.yml` enforces this directly, before either Node program is ever invoked, via a `shell: python` step, "Early checks," that produces a `skip` output the Octo STS step and both `dist/resolve-team-membership/index.js` and `dist/index.js`'s steps are conditioned on:
+The `frozen-teams`-empty short circuit is stricter than "skip participant resolution": it must skip **every** external call, including the Octo STS token exchange and the team-membership API calls, not just the evaluator's own calls. `action.yml` enforces this directly, before either Node program is ever invoked, via a `shell: python` step, "Early checks," that produces a `skip` output the Octo STS step and both `dist/resolve-team-membership/index.js` and `dist/index.js`'s steps are conditioned on. The same `skip` output, and thus the same "no external call" guarantee, also covers a `push`/`workflow_dispatch`/`schedule` run on a ref other than the default branch — see `docs/Internals/architecture.md`'s "Team-membership caching" section for why such a run's cache save could never be restored anyway.
 
 `frozen-teams` is empty once blank lines are stripped. `inputs.frozen-teams != ''` alone isn't enough here, since a whitespace-only or newline-only value (e.g. `"\n \n"`) is also "no frozen teams" as far as `src/config.ts`'s own parsing would treat it, but isn't the literal `''` string — this step normalizes the same way `splitLines` in `src/config.ts` does before comparing. The `"not set"` sentinel default is deliberately **not** treated as empty here, so an omitted input still reaches `dist/resolve-team-membership/index.js` and fails closed there; because a failed step stops the job by default, `dist/index.js` never runs in that case either.
 
