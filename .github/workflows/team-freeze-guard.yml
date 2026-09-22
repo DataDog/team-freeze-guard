@@ -35,15 +35,37 @@ on:
       - unlabeled
       - ready_for_review
       - edited
+    # These events warm the team-membership cache instead of running the e2e
+    # scenarios; see the warm-cache job below.
+  push:
+    branches:
+      - main  # default branch
+    paths:
+      - .github/workflows/team-freeze-guard.yml
+  schedule:
+    - cron: '0 12 * * *'  # every day at noon UTC, if team composition changes
+  workflow_dispatch:  # force cache update
 
 jobs:
+  warm-cache:
+    runs-on: ubuntu-latest
+    if: contains(fromJSON('["push","schedule","workflow_dispatch"]'), github.event_name)
+    permissions:
+      id-token: write
+      actions: write  # for team membership cache
+    steps:
+      - uses: DataDog/team-freeze-guard@7b6efc06bf2bfeb330a42fa7f5dfbf2410e5d4ef
+        with:
+          frozen-teams: |
+            @DataDog/apm-reliability-and-performance
+
   team-freeze-guard-e2e:
     name: Team freeze guard (e2e)
     runs-on: ubuntu-latest
     if: github.head_ref == 'e2e-tests'
     permissions:
       id-token: write
-      contents: read
+      contents: read  # required by the checkout step below now that this job declares explicit permissions
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
