@@ -59,7 +59,7 @@ runs:
     - name: Restore cached team membership
       id: restore-team-membership-cache
       if: steps.early-checks.outputs.skip != 'true'
-      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache/restore@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
       with:
         path: ${{ runner.temp }}/team-freeze-guard-team-membership.json
         key: ${{ steps.early-checks.outputs.cache-key }}
@@ -118,7 +118,7 @@ runs:
       if: >-
         steps.early-checks.outputs.skip != 'true' &&
         contains(fromJSON('["push","workflow_dispatch","schedule"]'), github.event_name)
-      uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      uses: actions/cache/save@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
       with:
         path: ${{ runner.temp }}/team-freeze-guard-team-membership.json
         key: ${{ steps.early-checks.outputs.cache-key }}
