@@ -41,7 +41,7 @@ on:
     branches:
       - main  # default branch
     paths:
-      - .github/workflows/e2e-team-freeze-guard.yml
+      - .github/workflows/team-freeze-guard.yml
   schedule:
     - cron: '0 12 * * *'  # every day at noon UTC, if team composition changes
   workflow_dispatch:  # force cache update
