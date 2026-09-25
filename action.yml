@@ -118,7 +118,7 @@ runs:
       if: >-
         steps.early-checks.outputs.skip != 'true' &&
         contains(fromJSON('["push","workflow_dispatch","schedule"]'), github.event_name)
-      uses: actions/cache/save@a7833574556fa59680c1b7cb190c1735db73ebf0 # v5.0.0
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ${{ runner.temp }}/team-freeze-guard-team-membership.json
         key: ${{ steps.early-checks.outputs.cache-key }}
