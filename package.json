@@ -23,5 +23,68 @@
     "typescript": "^5.5.0",
     "typescript-eslint": "^8.71.0",
     "vitest": "^5.0.2"
+  },
+  "overrides": {
+    "eslint": {
+      "@eslint/config-array": {
+        "minimatch": {
+          "brace-expansion": "^5.0.12"
+        }
+      },
+      "minimatch": {
+        "brace-expansion": "^5.0.12"
+      }
+    },
+    "typescript-eslint": {
+      "@typescript-eslint/eslint-plugin": {
+        "@typescript-eslint/parser": {
+          "@typescript-eslint/typescript-estree": {
+            "minimatch": {
+              "brace-expansion": "^5.0.12"
+            }
+          }
+        },
+        "@typescript-eslint/type-utils": {
+          "@typescript-eslint/typescript-estree": {
+            "minimatch": {
+              "brace-expansion": "^5.0.12"
+            }
+          },
+          "@typescript-eslint/utils": {
+            "@typescript-eslint/typescript-estree": {
+              "minimatch": {
+                "brace-expansion": "^5.0.12"
+              }
+            }
+          }
+        },
+        "@typescript-eslint/utils": {
+          "@typescript-eslint/typescript-estree": {
+            "minimatch": {
+              "brace-expansion": "^5.0.12"
+            }
+          }
+        }
+      },
+      "@typescript-eslint/parser": {
+        "@typescript-eslint/typescript-estree": {
+          "minimatch": {
+            "brace-expansion": "^5.0.12"
+          }
+        }
+      },
+      "@typescript-eslint/typescript-estree": {
+        "minimatch": {
+          "brace-expansion": "^5.0.12"
+        }
+      },
+      "@typescript-eslint/utils": {
+        "@typescript-eslint/typescript-estree": {
+          "minimatch": {
+            "brace-expansion": "^5.0.12"
+          }
+        }
+      }
+    }
   }
 }
